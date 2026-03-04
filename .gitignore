@@ -1,0 +1,25 @@
+# 환경 변수 (비밀키 포함)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Docker 볼륨 데이터
+pgdata/
+
+# 로컬 백업
+*.sql
+*.dump
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
