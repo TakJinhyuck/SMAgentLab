@@ -14,7 +14,29 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from database import get_conn
+from config import settings
 from services.embedding import embedding_service
+
+
+# ── Runtime threshold overrides ──────────────────────────────────────────────
+_runtime_thresholds: dict[str, float] = {}
+
+
+def get_thresholds() -> dict[str, float]:
+    return {
+        "glossary_min_similarity": _runtime_thresholds.get("glossary_min_similarity", settings.glossary_min_similarity),
+        "fewshot_min_similarity": _runtime_thresholds.get("fewshot_min_similarity", settings.fewshot_min_similarity),
+        "knowledge_min_score": _runtime_thresholds.get("knowledge_min_score", settings.knowledge_min_score),
+        "knowledge_high_score": _runtime_thresholds.get("knowledge_high_score", settings.knowledge_high_score),
+        "knowledge_mid_score": _runtime_thresholds.get("knowledge_mid_score", settings.knowledge_mid_score),
+    }
+
+
+def set_thresholds(updates: dict[str, float]) -> dict[str, float]:
+    for k, v in updates.items():
+        if k in ("glossary_min_similarity", "fewshot_min_similarity", "knowledge_min_score", "knowledge_high_score", "knowledge_mid_score"):
+            _runtime_thresholds[k] = v
+    return get_thresholds()
 
 
 @dataclass
@@ -57,7 +79,7 @@ async def map_glossary_term(
             namespace,
             str(query_vec),
         )
-    if row:
+    if row and float(row["similarity"]) >= get_thresholds()["glossary_min_similarity"]:
         return GlossaryMatch(
             term=row["term"],
             description=row["description"],
@@ -145,31 +167,16 @@ async def search_knowledge(
     ]
 
 
-async def hybrid_search(
-    namespace: str,
-    question: str,
-    w_vector: float = 0.7,
-    w_keyword: float = 0.3,
-    top_k: int = 5,
-) -> tuple[Optional[str], list[RetrievalResult]]:
-    """
-    2단계 하이브리드 검색 수행.
-
-    Returns:
-        (mapped_term, results)
-    """
-    query_vec = await embedding_service.embed(question)
-    glossary_match = await map_glossary_term(namespace, query_vec)
-    mapped_term = glossary_match.term if glossary_match else None
-    enriched_query = f"{question} {mapped_term}" if mapped_term else question
-    results = await search_knowledge(namespace, query_vec, enriched_query, w_vector, w_keyword, top_k)
-    return mapped_term, results
-
 
 async def fetch_fewshots(
-    namespace: str, query_vec: list[float], limit: int = 2
+    namespace: str, query_vec: list[float], limit: int = 2,
+    *, min_similarity: float | None = None,
 ) -> list[dict]:
-    """긍정 피드백으로 쌓인 Q&A 예시를 벡터 유사도 순으로 반환 (유사도 0.6 이상만)."""
+    """긍정 피드백으로 쌓인 Q&A 예시를 벡터 유사도 순으로 반환.
+
+    min_similarity가 None이면 설정 임계값 적용, 0이면 필터 없이 전부 반환.
+    """
+    min_sim = min_similarity if min_similarity is not None else get_thresholds()["fewshot_min_similarity"]
     async with get_conn() as conn:
         rows = await conn.fetch(
             """
@@ -177,15 +184,19 @@ async def fetch_fewshots(
                    1 - (embedding <=> $2::vector) AS similarity
             FROM ops_fewshot
             WHERE namespace = $1
-              AND 1 - (embedding <=> $2::vector) >= 0.6
+              AND 1 - (embedding <=> $2::vector) >= $4
             ORDER BY embedding <=> $2::vector
             LIMIT $3
             """,
             namespace,
             str(query_vec),
             limit,
+            min_sim,
         )
-    return [{"question": r["question"], "answer": r["answer"]} for r in rows]
+    return [
+        {"question": r["question"], "answer": r["answer"], "similarity": float(r["similarity"])}
+        for r in rows
+    ]
 
 
 def build_fewshot_section(fewshots: list[dict]) -> str:
@@ -199,13 +210,20 @@ def build_fewshot_section(fewshots: list[dict]) -> str:
 
 
 def build_context(results: list[RetrievalResult]) -> str:
-    """검색 결과를 LLM 프롬프트용 컨텍스트 문자열로 변환."""
-    if not results:
-        return "관련 문서를 찾지 못했습니다."
+    """검색 결과를 LLM 프롬프트용 컨텍스트 문자열로 변환.
+
+    final_score가 knowledge_min_score 미만인 결과는 제외하고,
+    점수 기반 신뢰도 라벨을 부여하여 LLM이 가중치를 판단할 수 있게 한다.
+    """
+    th = get_thresholds()
+    relevant = [r for r in results if r.final_score >= th["knowledge_min_score"]]
+    if not relevant:
+        return ""
 
     parts = []
-    for i, r in enumerate(results, 1):
-        part = [f"--- 문서 {i} (점수: {r.final_score:.4f}) ---"]
+    for i, r in enumerate(relevant, 1):
+        confidence = "높음" if r.final_score >= th["knowledge_high_score"] else "보통" if r.final_score >= th["knowledge_mid_score"] else "낮음"
+        part = [f"--- 문서 {i} (점수: {r.final_score:.4f}, 신뢰도: {confidence}) ---"]
         if r.container_name:
             part.append(f"컨테이너: {r.container_name}")
         if r.target_tables:

@@ -22,9 +22,10 @@ def _ollama_timeout() -> httpx.Timeout:
 
 class OllamaProvider(LLMProvider):
 
-    def __init__(self):
-        self._base_url = settings.ollama_base_url
-        self._model = settings.ollama_model
+    def __init__(self, runtime_cfg: dict | None = None):
+        cfg = runtime_cfg or {}
+        self._base_url = cfg.get("ollama_base_url", settings.ollama_base_url)
+        self._model = cfg.get("ollama_model", settings.ollama_model)
 
     async def generate(self, context: str, question: str, history: list[dict] | None = None) -> str:
         messages = build_messages(context, question, history)

@@ -20,18 +20,21 @@ from services.llm.base import LLMProvider, build_messages
 
 class InHouseLLMProvider(LLMProvider):
 
-    def __init__(self):
-        if not settings.inhouse_llm_url:
+    def __init__(self, runtime_cfg: dict | None = None):
+        cfg = runtime_cfg or {}
+        url = cfg.get("inhouse_llm_url", settings.inhouse_llm_url)
+        if not url:
             raise ValueError(
                 "LLM_PROVIDER=inhouse 이지만 INHOUSE_LLM_URL 이 설정되지 않았습니다."
             )
-        self._url = settings.inhouse_llm_url.rstrip("/")
-        self._model = settings.inhouse_llm_model
+        self._url = url.rstrip("/")
+        self._model = cfg.get("inhouse_llm_model", settings.inhouse_llm_model)
+        api_key = cfg.get("inhouse_llm_api_key", settings.inhouse_llm_api_key)
         self._headers = {
             "Content-Type": "application/json",
-            **({"Authorization": f"Bearer {settings.inhouse_llm_api_key}"} if settings.inhouse_llm_api_key else {}),
+            **({"Authorization": f"Bearer {api_key}"} if api_key else {}),
         }
-        self._timeout = settings.inhouse_llm_timeout
+        self._timeout = cfg.get("inhouse_llm_timeout", settings.inhouse_llm_timeout)
 
     async def generate(self, context: str, question: str, history: list[dict] | None = None) -> str:
         payload = {

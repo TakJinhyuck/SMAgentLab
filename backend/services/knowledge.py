@@ -1,13 +1,13 @@
-"""
-지식 베이스 및 용어집 CRUD 서비스
-임베딩 자동 생성 포함
-"""
+"""지식 베이스, 용어집, 네임스페이스 CRUD 서비스."""
 from __future__ import annotations
 
 from typing import Optional
 
 from database import get_conn
 from services.embedding import embedding_service
+
+_KNOWLEDGE_COLS = """id, namespace, container_name, target_tables,
+    content, query_template, base_weight, created_at::text, updated_at::text"""
 
 
 # ─── ops_knowledge ────────────────────────────────────────────────────────────
@@ -23,22 +23,15 @@ async def create_knowledge(
     embedding = await embedding_service.embed(content)
     async with get_conn() as conn:
         row = await conn.fetchrow(
-            """
+            f"""
             INSERT INTO ops_knowledge
                 (namespace, container_name, target_tables, content,
                  query_template, embedding, base_weight)
             VALUES ($1, $2, $3, $4, $5, $6::vector, $7)
-            RETURNING id, namespace, container_name, target_tables,
-                      content, query_template, base_weight,
-                      created_at::text, updated_at::text
+            RETURNING {_KNOWLEDGE_COLS}
             """,
-            namespace,
-            container_name,
-            target_tables,
-            content,
-            query_template,
-            str(embedding),
-            base_weight,
+            namespace, container_name, target_tables, content,
+            query_template, str(embedding), base_weight,
         )
     return dict(row)
 
@@ -52,7 +45,6 @@ async def update_knowledge(
     base_weight: Optional[float] = None,
 ) -> Optional[dict]:
     async with get_conn() as conn:
-        # 현재 값 조회
         current = await conn.fetchrow(
             "SELECT * FROM ops_knowledge WHERE id = $1", knowledge_id
         )
@@ -65,36 +57,21 @@ async def update_knowledge(
         new_template = query_template if query_template is not None else current["query_template"]
         new_weight = base_weight if base_weight is not None else current["base_weight"]
 
-        # 컨텐츠 변경 시 임베딩 재생성
-        new_embedding = str(await embedding_service.embed(new_content)) if content else None
+        # content 변경 시 임베딩 재생성, 아니면 기존 유지
+        new_embedding = str(await embedding_service.embed(new_content)) if content else str(current["embedding"])
 
-        if new_embedding:
-            row = await conn.fetchrow(
-                """
-                UPDATE ops_knowledge
-                SET container_name = $1, target_tables = $2, content = $3,
-                    query_template = $4, embedding = $5::vector, base_weight = $6
-                WHERE id = $7
-                RETURNING id, namespace, container_name, target_tables,
-                          content, query_template, base_weight,
-                          created_at::text, updated_at::text
-                """,
-                new_container, new_tables, new_content,
-                new_template, new_embedding, new_weight, knowledge_id,
-            )
-        else:
-            row = await conn.fetchrow(
-                """
-                UPDATE ops_knowledge
-                SET container_name = $1, target_tables = $2,
-                    query_template = $3, base_weight = $4
-                WHERE id = $5
-                RETURNING id, namespace, container_name, target_tables,
-                          content, query_template, base_weight,
-                          created_at::text, updated_at::text
-                """,
-                new_container, new_tables, new_template, new_weight, knowledge_id,
-            )
+        row = await conn.fetchrow(
+            f"""
+            UPDATE ops_knowledge
+            SET container_name=$1, target_tables=$2, content=$3,
+                query_template=$4, embedding=$5::vector, base_weight=$6,
+                updated_at=NOW()
+            WHERE id = $7
+            RETURNING {_KNOWLEDGE_COLS}
+            """,
+            new_container, new_tables, new_content,
+            new_template, new_embedding, new_weight, knowledge_id,
+        )
     return dict(row) if row else None
 
 
@@ -110,25 +87,12 @@ async def list_knowledge(namespace: Optional[str] = None) -> list[dict]:
     async with get_conn() as conn:
         if namespace:
             rows = await conn.fetch(
-                """
-                SELECT id, namespace, container_name, target_tables,
-                       content, query_template, base_weight,
-                       created_at::text, updated_at::text
-                FROM ops_knowledge
-                WHERE namespace = $1
-                ORDER BY created_at DESC
-                """,
+                f"SELECT {_KNOWLEDGE_COLS} FROM ops_knowledge WHERE namespace = $1 ORDER BY created_at DESC",
                 namespace,
             )
         else:
             rows = await conn.fetch(
-                """
-                SELECT id, namespace, container_name, target_tables,
-                       content, query_template, base_weight,
-                       created_at::text, updated_at::text
-                FROM ops_knowledge
-                ORDER BY namespace, created_at DESC
-                """
+                f"SELECT {_KNOWLEDGE_COLS} FROM ops_knowledge ORDER BY namespace, created_at DESC"
             )
     return [dict(r) for r in rows]
 
@@ -153,12 +117,12 @@ async def list_glossary(namespace: Optional[str] = None) -> list[dict]:
     async with get_conn() as conn:
         if namespace:
             rows = await conn.fetch(
-                "SELECT id, namespace, term, description FROM ops_glossary WHERE namespace = $1 ORDER BY term",
+                "SELECT id, namespace, term, description FROM ops_glossary WHERE namespace = $1 ORDER BY id DESC",
                 namespace,
             )
         else:
             rows = await conn.fetch(
-                "SELECT id, namespace, term, description FROM ops_glossary ORDER BY namespace, term"
+                "SELECT id, namespace, term, description FROM ops_glossary ORDER BY id DESC"
             )
     return [dict(r) for r in rows]
 
@@ -193,10 +157,8 @@ async def list_namespaces() -> list[str]:
         rows = await conn.fetch(
             """
             SELECT DISTINCT name AS namespace FROM ops_namespace
-            UNION
-            SELECT DISTINCT namespace FROM ops_knowledge
-            UNION
-            SELECT DISTINCT namespace FROM ops_glossary
+            UNION SELECT DISTINCT namespace FROM ops_knowledge
+            UNION SELECT DISTINCT namespace FROM ops_glossary
             ORDER BY namespace
             """
         )
@@ -211,22 +173,17 @@ async def list_namespaces_detail() -> list[dict]:
                 SELECT name, COALESCE(description, '') AS description, created_at
                 FROM ops_namespace
                 UNION
-                SELECT DISTINCT namespace AS name, '' AS description, NOW() AS created_at
+                SELECT DISTINCT namespace, '', NOW()
                 FROM ops_knowledge WHERE namespace NOT IN (SELECT name FROM ops_namespace)
                 UNION
-                SELECT DISTINCT namespace AS name, '' AS description, NOW() AS created_at
+                SELECT DISTINCT namespace, '', NOW()
                 FROM ops_glossary WHERE namespace NOT IN (SELECT name FROM ops_namespace)
             ),
-            k_cnt AS (
-                SELECT namespace, COUNT(*) AS cnt FROM ops_knowledge GROUP BY namespace
-            ),
-            g_cnt AS (
-                SELECT namespace, COUNT(*) AS cnt FROM ops_glossary GROUP BY namespace
-            )
-            SELECT
-                n.name, n.description, n.created_at::text,
-                COALESCE(k.cnt, 0) AS knowledge_count,
-                COALESCE(g.cnt, 0) AS glossary_count
+            k_cnt AS (SELECT namespace, COUNT(*) AS cnt FROM ops_knowledge GROUP BY namespace),
+            g_cnt AS (SELECT namespace, COUNT(*) AS cnt FROM ops_glossary GROUP BY namespace)
+            SELECT n.name, n.description, n.created_at::text,
+                   COALESCE(k.cnt, 0) AS knowledge_count,
+                   COALESCE(g.cnt, 0) AS glossary_count
             FROM all_ns n
             LEFT JOIN k_cnt k ON n.name = k.namespace
             LEFT JOIN g_cnt g ON n.name = g.namespace
@@ -252,11 +209,8 @@ async def create_namespace(name: str, description: str = "") -> dict:
 
 async def delete_namespace(name: str) -> bool:
     async with get_conn() as conn:
-        await conn.execute("DELETE FROM ops_feedback WHERE namespace = $1", name)
-        await conn.execute("DELETE FROM ops_query_log WHERE namespace = $1", name)
-        await conn.execute("DELETE FROM ops_fewshot WHERE namespace = $1", name)
-        await conn.execute("DELETE FROM ops_conversation WHERE namespace = $1", name)
-        await conn.execute("DELETE FROM ops_knowledge WHERE namespace = $1", name)
-        await conn.execute("DELETE FROM ops_glossary WHERE namespace = $1", name)
+        for table in ("ops_feedback", "ops_query_log", "ops_fewshot",
+                       "ops_conversation", "ops_knowledge", "ops_glossary"):
+            await conn.execute(f"DELETE FROM {table} WHERE namespace = $1", name)
         result = await conn.execute("DELETE FROM ops_namespace WHERE name = $1", name)
     return "DELETE 1" in result

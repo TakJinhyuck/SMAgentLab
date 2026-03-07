@@ -23,3 +23,7 @@ pgdata/
 .idea/
 .vscode/
 *.swp
+
+# Claude Code (로컬 설정 & 세션)
+.claude/settings.local.json
+.claude/todos/

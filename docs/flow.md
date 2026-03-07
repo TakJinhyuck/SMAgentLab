@@ -9,14 +9,14 @@
   │  "쿠폰 뺏어오기 실패한 건 어떻게 확인해?"
   ▼
 ┌─────────────────────┐
-│  Streamlit Frontend │
-│  (1_Chat.py)        │
+│   React Frontend    │
+│   (Chat 페이지)      │
 │                     │
 │  - namespace 선택    │
 │  - 벡터/키워드 비중  │
 │  - Top-K 설정       │
 └────────┬────────────┘
-         │  POST /api/chat
+         │  POST /api/chat/stream  (SSE)
          │  { namespace, question, w_vector, w_keyword, top_k }
          ▼
 ┌─────────────────────────────────────────────────────────────┐
@@ -62,27 +62,33 @@
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │  Step 3: LLM 답변 생성                              │   │
 │  │                                                     │   │
+│  │  build_fewshot_section(fewshots)                    │   │
+│  │  → 유사 Q&A 사례를 프롬프트 앞부분에 포맷            │   │
+│  │                                                     │   │
 │  │  build_context(results)                             │   │
 │  │  → 검색된 문서들을 프롬프트 형식으로 포맷             │   │
 │  │                                                     │   │
-│  │  OllamaProvider.generate(context, question)         │   │
-│  │  POST http://host.docker.internal:11434/api/generate│   │
-│  │  model: exaone3.5:7.8b                              │   │
+│  │  build_messages(context, question, history)          │   │
+│  │  → [system + 과거요약] + [최근2회 교환] + [현재 질문] │   │
+│  │                                                     │   │
+│  │  LLMProvider.generate(context, question, history)   │   │
+│  │  POST /api/chat (messages 배열, multi-turn)          │   │
 │  │  → LLM 답변 텍스트                                  │   │
 │  └─────────────────────────────────────────────────────┘   │
 │                                                             │
-│  ops_query_log에 질의 기록 (namespace, question, resolved)  │
+│  ops_query_log에 질의 기록 (namespace, question, status)    │
 └─────────────────────────────────────────────────────────────┘
          │
-         │  ChatResponse { question, mapped_term, results[], answer }
+         │  SSE 이벤트 스트림 (status → meta → token → done)
          ▼
 ┌─────────────────────┐
-│  Streamlit Frontend │
+│   React Frontend    │
 │                     │
+│  - 단계별 진행 표시  │
 │  - 용어 매핑 표시    │
 │  - 결과 카드 렌더링  │
 │    (컨테이너, 테이블, SQL) │
-│  - AI 답변 출력     │
+│  - AI 답변 스트리밍  │
 │  - 👍/👎 피드백 버튼 │
 └─────────────────────┘
 ```
@@ -259,7 +265,72 @@ ops_glossary 벡터 검색 (namespace 필터)
 
 ---
 
-## 6. 지식 등록 흐름
+## 4. 대화 메모리 흐름 (ConversationSummaryBuffer + Semantic Recall)
+
+대화가 길어져도 LLM 컨텍스트 윈도우를 넘기지 않으면서 관련 맥락을 유지하는 전략이다.
+
+### 메모리 구성 원리
+
+```
+대화방 (conversation_id = 42)
+─────────────────────────────────────────────────
+
+교환 1: Q "쿠폰 회수 방법?" → A "..."
+교환 2: Q "그 쿼리 테이블 알려줘" → A "..."
+교환 3: Q "에러 코드 COUPON_001은?" → A "..."
+교환 4: Q "그럼 실패 원인은?" → A "..."   ← 4회 도달, 요약 트리거
+  │
+  ▼
+maybe_summarize(conv_id, llm_provider)
+  │  교환 1~2를 LLM으로 요약
+  │  → "사용자가 쿠폰 회수 방법과 관련 테이블을 질문함..."
+  │  → summary 임베딩 생성 → ops_conv_summary INSERT
+  │     (conversation_id, summary, embedding, turn_start=1, turn_end=2)
+  │
+  ▼
+교환 5: Q "선물 발송 오류는?" (새 질문)
+  │
+  ├─ build_context_history(conv_id, query_vec)
+  │     │
+  │     ├─ 최근 2회 raw 교환 (교환 3, 4) → working memory (항상 포함)
+  │     │
+  │     └─ ops_conv_summary 벡터 검색 (유사도 ≥ 0.45, 최대 2개)
+  │           "선물 발송 오류" 벡터 vs 과거 요약 벡터
+  │           → 쿠폰 관련 요약은 유사도 낮아 제외됨
+  │
+  ▼
+LLM에 전달되는 messages:
+  [system: 시스템프롬프트 + 검색 결과]
+  ← 과거 요약은 유사도 미달로 미포함
+  [user: "에러 코드 COUPON_001은?"]      ← 최근 2회 (working memory)
+  [assistant: "..."]
+  [user: "그럼 실패 원인은?"]
+  [assistant: "..."]
+  [user: "선물 발송 오류는?"]            ← 현재 질문
+```
+
+### 요약 트리거 조건
+
+```
+총 교환 횟수 (user+assistant 쌍) ÷ SUMMARY_INTERVAL(4) > 기존 요약 수
+→ 아직 요약하지 않은 오래된 교환을 LLM으로 요약
+→ 최근 KEEP_RECENT(2)회 교환은 항상 raw로 유지
+→ 요약은 _post_save_tasks()에서 비동기 백그라운드 실행
+```
+
+### Semantic Recall이 효과적인 경우
+
+```
+대화방에서 10번째 교환 중:
+  과거 교환 1~2에서 "쿠폰 회수 쿼리" 논의 → 요약 저장됨
+  현재 교환 10: "아까 쿠폰 관련 쿼리 다시 알려줘"
+  → query_vec와 과거 요약 벡터 유사도 0.72 → 리콜됨
+  → LLM이 과거 맥락을 참고하여 정확한 답변 생성
+```
+
+---
+
+## 5. 지식 등록 흐름
 
 ```
 관리자
@@ -268,7 +339,7 @@ ops_glossary 벡터 검색 (namespace 필터)
   │  { namespace, container_name, target_tables, content, query_template, base_weight }
   ▼
 ┌─────────────────────┐
-│  Admin (2_Admin.py) │
+│   Admin (React)     │
 └────────┬────────────┘
          │  POST /api/knowledge
          ▼
@@ -287,14 +358,14 @@ ops_glossary 벡터 검색 (namespace 필터)
          │  { id, namespace, content, embedding, ... }
          ▼
 ┌─────────────────────┐
-│  Admin              │
-│  "등록 완료! (ID: 3)"│
+│   Admin (React)     │
+│   목록에 즉시 반영   │
 └─────────────────────┘
 ```
 
 ---
 
-## 5. 통계 수집 전체 사이클
+## 6. 통계 수집 전체 사이클
 
 ### 질의 → 로그 → 피드백 → 통계 흐름
 
@@ -310,17 +381,18 @@ POST /api/chat
    │
    ▼
 ops_query_log INSERT
-   ┌───────────────────────────────────────────────────────┐
-   │ namespace  │ question          │ resolved │ created_at │
-   ├───────────────────────────────────────────────────────┤
-   │ coupon     │ "쿠폰 뺏어오기..."  │ TRUE     │ 2024-01-15 │
-   │            │  (검색 결과 있음)  │          │            │
-   ├───────────────────────────────────────────────────────┤
-   │ gift       │ "알 수 없는 오류"  │ FALSE    │ 2024-01-15 │
-   │            │  (검색 결과 없음)  │          │            │
-   └───────────────────────────────────────────────────────┘
-   resolved = TRUE   : 검색 결과가 1건 이상 반환됨
-   resolved = FALSE  : 검색 결과 0건 (지식 없음)
+   ┌──────────────────────────────────────────────────────────┐
+   │ namespace  │ question          │ status     │ created_at │
+   ├──────────────────────────────────────────────────────────┤
+   │ coupon     │ "쿠폰 뺏어오기..."  │ pending    │ 2024-01-15 │
+   │            │  (검색 결과 있음)  │            │            │
+   ├──────────────────────────────────────────────────────────┤
+   │ gift       │ "알 수 없는 오류"  │ unresolved │ 2024-01-15 │
+   │            │  (검색 결과 없음)  │            │            │
+   └──────────────────────────────────────────────────────────┘
+   pending    : LLM이 정상 답변을 생성했지만 아직 피드백 없음
+   resolved   : 👍 긍정 피드백으로 확인됨
+   unresolved : 검색 결과 0건 AND LLM 답변도 실패, 또는 👎 부정 피드백
 
 ② 사용자 피드백 (품질 자동 개선)
 
@@ -332,6 +404,8 @@ ops_query_log INSERT
    ├─ UPDATE ops_knowledge SET base_weight = LEAST(base_weight + 0.1, 5.0)
    │   WHERE id = knowledge_id
    │   → 이 문서가 이후 동일 주제 검색에서 더 높은 점수를 받음 (검색 랭킹 상승)
+   ├─ UPDATE ops_query_log SET status = 'resolved'
+   │   → pending → resolved 전환 (피드백으로 품질 확인됨)
    └─ INSERT INTO ops_fewshot (namespace, question, answer, knowledge_id, embedding)
        → 질문 임베딩 생성 후 저장
        → 다음 유사 질문 시 LLM 프롬프트에 "[과거 유사 질문 답변 사례]"로 자동 삽입
@@ -343,7 +417,7 @@ ops_query_log INSERT
    ├─ ops_feedback INSERT  (로그)
    ├─ UPDATE ops_knowledge SET base_weight = GREATEST(base_weight - 0.1, 0.0)
    │   → 이 문서가 이후 검색에서 낮은 점수를 받음 (검색 랭킹 하락)
-   └─ UPDATE ops_query_log SET resolved = FALSE
+   └─ UPDATE ops_query_log SET status = 'unresolved'
        → "결과는 나왔지만 내용이 틀렸음" → 미해결로 재분류
        → 통계 대시보드 미해결 케이스에 표시
 
@@ -374,7 +448,7 @@ ops_query_log INSERT
    ▼
 GET /api/stats
    │  WITH all_ns (ops_namespace UNION ops_knowledge UNION ops_glossary)
-   │  LEFT JOIN q_agg  (질의 수, 해결/미해결)
+   │  LEFT JOIN q_agg  (질의 수, 해결/대기/미해결)
    │  LEFT JOIN fb_agg (좋아요/싫어요 수)
    │  LEFT JOIN k_agg  (지식 문서 수)
    │  LEFT JOIN g_agg  (용어집 항목 수)
@@ -382,9 +456,9 @@ GET /api/stats
 
 ⑤ 대시보드 렌더링
    │
-   ├─ KPI 카드  (총 질의 수 / 전체 해결률 / 만족도 % / 미해결 건수)
+   ├─ KPI 카드  (총 질의 수 / 해결 / 대기 중 / 미해결 건수)
    ├─ 지식 베이스 현황 테이블  (namespace별 지식·용어집 개수)
-   ├─ 질의 처리 현황  (해결 vs 미해결 스택 바차트)
+   ├─ 질의 처리 현황  (해결/대기/미해결 도넛 차트)
    ├─ 피드백 현황    (👍/👎 그룹 바차트 + 만족도 텍스트 바)
    └─ 미해결 케이스 목록  (지식 보완 가이드 + 취약 namespace 자동 알림)
 
@@ -397,13 +471,13 @@ GET /api/stats
       └─ 용어 표현 문제            → 용어집에 유의어 추가
       │
       ▼
-   다음 동일 질문에서 resolved = TRUE 로 기록
+   다음 동일 질문에서 status = 'resolved' 로 기록
 ```
 
 ### 해결률이 낮을 때 체크리스트
 
 ```
-해결률 = resolved 건수 / total_queries × 100
+해결률 = resolved 건수 / total_queries × 100  (pending은 미확인 상태)
 
 낮은 경우 원인:
   1. 해당 namespace에 지식 등록 부족
@@ -421,51 +495,70 @@ GET /api/stats
 
 ## 7. SSE 스트리밍 응답 흐름 (`/api/chat/stream`)
 
-백엔드가 파이프라인 각 단계에 진입할 때마다 `status` 이벤트를 먼저 발행하므로,
-프론트엔드는 실시간으로 현재 단계를 표시할 수 있다.
+**asyncio.Task + Queue 디커플링** 방식으로 LLM 생성이 HTTP 연결 수명에서 완전히 분리된다.
+클라이언트가 연결을 끊어도(새 대화, 탭 닫기 등) 백엔드 워커가 독립적으로 끝까지 실행하여 DB에 저장한다.
 
 ```
-Frontend (st.status 박스)          Backend event_generator()
+React Frontend                     Backend chat_stream()
 ─────────────────────────          ──────────────────────────────────────────
 
-                           ◀──── data: {"type":"status","step":"embedding",
-"🔍 질문 임베딩 생성 중..."              "message":"🔍 질문 임베딩 생성 중..."}
-                                   │  await embedding_service.embed(question)
+POST /api/chat/stream              ── HTTP 핸들러 (동기) ──
+  { namespace, question,           │  _get_or_create_conversation(...)
+    w_vector, w_keyword, top_k }   │  _cleanup_ghost_messages(conv_id)
+                                   │  _save_user_message(conv_id, question)
+                                   │  _pre_create_assistant_message(conv_id) → msg_id (status='generating')
+                                   │  queue = asyncio.Queue()
+                                   │  asyncio.create_task(_generate_worker(queue, ...))
                                    ▼
-                           ◀──── data: {"type":"status","step":"glossary",
-"📖 용어집 매핑 중..."                  "message":"📖 용어집에서 표준 용어 매핑 중..."}
-                                   │  await map_glossary_term(...)
+                                   ── event_generator (SSE 스트리밍) ──
+
+                           ◀──── data: {"type":"meta",
+[Early Meta: 0.02초 내 전송]              "conversation_id": 42,
+                                          "message_id": 123,
+                                          "mapped_term": null,
+                                          "results": []}
+                                   │
+                                   │  queue.get() → worker가 넣은 이벤트 전달
                                    ▼
-                           ◀──── data: {"type":"status","step":"search",
-"🔎 하이브리드 검색 중..."              "message":"🔎 하이브리드 검색 중..."}
-                                   │  await search_knowledge(...)
+                           ◀──── data: {"type":"status","step":"embedding",...}
+[파이프라인 진행 표시]       ◀──── data: {"type":"status","step":"context",...}
+                           ◀──── data: {"type":"status","step":"search",...}
                                    ▼
-                           ◀──── data: {"type":"meta","mapped_term":"회수",
-[결과 카드 즉시 렌더링]                  "results":[...]}
+                           ◀──── data: {"type":"meta",
+[결과 카드 즉시 렌더링]              "mapped_term":"회수",
+                                    "results":[...]}
                                    ▼
-                           ◀──── data: {"type":"status","step":"llm",
-"🤖 AI 답변 생성 중..."                 "message":"🤖 AI 답변 생성 중..."}
-                                   │  get_llm_provider().generate_stream(...)
-                                   ▼
+                           ◀──── data: {"type":"status","step":"llm",...}
                            ◀──── data: {"type":"token","data":"쿠폰"}
-[답변 텍스트 스트리밍 출력]    ◀──── data: {"type":"token","data":" 회수"}
-                                   ...
-                           ◀──── data: {"type":"done"}
-✅ 완료 — N건 검색됨
+[답변 텍스트 스트리밍 출력]  ◀──── data: {"type":"token","data":" 회수"}
+                                   ...  (20토큰마다 DB 부분 저장)
+                                   ▼
+                           ◀──── data: {"type":"done","message_id": 123}
+[완료 — 피드백 버튼 활성화]        │  DB: status='completed'
 ```
+
+**클라이언트 연결 끊김 처리 (asyncio.Task 디커플링):**
+- `event_generator`에서 `GeneratorExit`/`CancelledError` 발생 → SSE 전송만 중단
+- `_generate_worker` 태스크는 Queue에 독립적으로 이벤트를 넣으며 끝까지 실행
+- 워커 완료 시 DB에 `status='completed'` 저장 + `queue.put(None)` (EOF)
+- 프론트엔드가 이전 대화로 돌아오면 `status='generating'` 감지 → 3초 polling → 자동 갱신
+
+**사이드바 대화 목록 타이밍:**
+- 스트리밍 중 대화 목록 갱신 억제 (질문 즉시 목록에 나타나지 않음)
+- 스트림 완료(active → false) 시에만 대화 목록 갱신 → 자연스러운 UX
 
 **이벤트 타입 요약:**
 
 | type | 발행 시점 | 프론트엔드 처리 |
 |------|----------|---------------|
-| `status` | 각 단계 진입 시 | `st.status` 박스 메시지 갱신 |
-| `meta` | 검색 완료 후 | 결과 카드(컨테이너/테이블/SQL) 즉시 렌더링 |
+| `status` | 각 파이프라인 단계 시작 시 (embedding/context/search/llm) | 단계별 진행 표시 (토글 UI) |
+| `meta` | ① Early Meta (DB insert 직후, 0.02초) ② 검색 완료 후 | ①에서 conversation_id/message_id 수신, ②에서 결과 카드 렌더링 |
 | `token` | LLM 토큰마다 | 답변 영역에 토큰 누적 출력 |
-| `done` | 모든 처리 완료 | status 박스 "완료" 상태로 닫힘, 피드백 버튼 활성화 |
+| `done` | 모든 처리 완료 (DB status=completed) | message_id 수신, 피드백 버튼 활성화 |
 
 ---
 
-## 8. 하이브리드 검색 점수 계산 상세
+## 8. 하이브리드 검색 점수 계산 상세 (SQL 레벨)
 
 ```
 입력:
@@ -497,10 +590,35 @@ Frontend (st.status 박스)          Backend event_generator()
 
 ## 9. LLM Provider 전환 흐름
 
+### 런타임 전환 (Admin UI — 재시작 불필요)
+
+```
+관리자
+  │  Admin → LLM 설정 탭
+  │  프로바이더 선택 + 설정값 입력 + "저장 및 적용"
+  ▼
+PUT /api/llm/config
+  │  { provider, ollama_base_url, ... }
+  ▼
+services/llm/__init__.py — switch_provider(config)
+  │  _runtime_config = config  (전역 저장)
+  │  _provider = None          (싱글톤 초기화)
+  │  _create_provider()        (새 인스턴스 생성)
+  ▼
+provider.health_check()         (연결 확인)
+  ▼
+{ is_connected, is_runtime_override: true, ... } 반환
+
+이후 모든 LLM 호출은 새 프로바이더 인스턴스 사용
+컨테이너 재시작 시 .env 설정으로 복귀
+```
+
+### 환경변수 기반 전환 (영구 적용)
+
 ```
 .env 또는 환경변수
   LLM_PROVIDER=ollama   →  OllamaProvider
-                             POST :11434/api/generate
+                             POST :11434/api/chat (messages 배열, multi-turn)
 
   LLM_PROVIDER=inhouse  →  InHouseLLMProvider
                              POST {INHOUSE_LLM_URL}/v1/chat/completions

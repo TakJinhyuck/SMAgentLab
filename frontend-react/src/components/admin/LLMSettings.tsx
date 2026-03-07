@@ -1,0 +1,447 @@
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Cpu, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Save, FlaskConical, SlidersHorizontal } from 'lucide-react';
+import { getLLMConfig, updateLLMConfig, testLLMConnection, getSearchThresholds, updateSearchThresholds } from '../../api/llm';
+import type { LLMConfig, LLMConfigUpdate, SearchThresholds } from '../../api/llm';
+import { Button } from '../ui/Button';
+
+type Provider = 'ollama' | 'inhouse';
+
+interface FormState {
+  provider: Provider;
+  ollama_base_url: string;
+  ollama_model: string;
+  ollama_timeout: number;
+  inhouse_llm_url: string;
+  inhouse_llm_api_key: string;
+  inhouse_llm_model: string;
+  inhouse_llm_timeout: number;
+}
+
+function configToForm(cfg: LLMConfig): FormState {
+  return {
+    provider: cfg.provider,
+    ollama_base_url: cfg.ollama.base_url,
+    ollama_model: cfg.ollama.model,
+    ollama_timeout: cfg.ollama.timeout,
+    inhouse_llm_url: cfg.inhouse.url,
+    inhouse_llm_api_key: '',  // API 키는 서버에서 내려주지 않음 (has_api_key만 표시)
+    inhouse_llm_model: cfg.inhouse.model,
+    inhouse_llm_timeout: cfg.inhouse.timeout,
+  };
+}
+
+function ConnectionBadge({ ok, checking }: { ok: boolean | null; checking?: boolean }) {
+  if (checking) return (
+    <span className="flex items-center gap-1.5 text-xs text-slate-400">
+      <RefreshCw className="w-3.5 h-3.5 animate-spin" /> 연결 확인 중...
+    </span>
+  );
+  if (ok === null) return null;
+  if (ok) return (
+    <span className="flex items-center gap-1.5 text-xs text-emerald-400">
+      <CheckCircle2 className="w-3.5 h-3.5" /> 연결됨
+    </span>
+  );
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-rose-400">
+      <XCircle className="w-3.5 h-3.5" /> 연결 실패
+    </span>
+  );
+}
+
+export function LLMSettings() {
+  const qc = useQueryClient();
+  const [form, setForm] = useState<FormState | null>(null);
+  const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  const { data: config, isLoading } = useQuery({
+    queryKey: ['llm-config'],
+    queryFn: getLLMConfig,
+    staleTime: 10_000,
+  });
+
+  // config 로드 시 폼 초기화 (한 번만)
+  useEffect(() => {
+    if (config && !form) {
+      setForm(configToForm(config));
+    }
+  }, [config, form]);
+
+  const saveMutation = useMutation({
+    mutationFn: (payload: LLMConfigUpdate) => updateLLMConfig(payload),
+    onSuccess: (data: LLMConfig) => {
+      qc.setQueryData(['llm-config'], data);
+      setForm(configToForm(data));
+      setTestResult({ ok: data.is_connected });
+      setDirty(false);
+    },
+  });
+
+  const handleChange = <K extends keyof FormState>(key: K, value: FormState[K]) => {
+    setForm((f) => f ? { ...f, [key]: value } : f);
+    setDirty(true);
+    setTestResult(null);
+  };
+
+  const buildPayload = (): LLMConfigUpdate => {
+    if (!form) throw new Error('no form');
+    const payload: LLMConfigUpdate = { provider: form.provider };
+    if (form.provider === 'ollama') {
+      payload.ollama_base_url = form.ollama_base_url;
+      payload.ollama_model = form.ollama_model;
+      payload.ollama_timeout = form.ollama_timeout;
+    } else {
+      payload.inhouse_llm_url = form.inhouse_llm_url;
+      payload.inhouse_llm_model = form.inhouse_llm_model;
+      payload.inhouse_llm_timeout = form.inhouse_llm_timeout;
+      if (form.inhouse_llm_api_key) payload.inhouse_llm_api_key = form.inhouse_llm_api_key;
+    }
+    return payload;
+  };
+
+  const handleTest = async () => {
+    if (!form) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const payload = buildPayload();
+      const result = await testLLMConnection(payload);
+      setTestResult({ ok: result.is_connected, error: result.error });
+    } catch {
+      setTestResult({ ok: false, error: '요청 실패' });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleSave = () => {
+    if (!form) return;
+    saveMutation.mutate(buildPayload());
+  };
+
+  if (isLoading || !form) {
+    return <div className="text-center py-10 text-slate-500 animate-pulse">설정 로딩 중...</div>;
+  }
+
+  const currentProvider = config?.provider;
+  const isConnected = config?.is_connected;
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-200 flex items-center gap-2">
+            <Cpu className="w-5 h-5 text-indigo-400" />
+            LLM 프로바이더 설정
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            런타임 전환 — 컨테이너 재시작 시 .env 설정으로 복귀됩니다
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <ConnectionBadge ok={isConnected ?? null} />
+          {config?.is_runtime_override && (
+            <span className="text-xs text-amber-400 flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" /> 런타임 오버라이드 중
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Provider selector */}
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-slate-400 mb-2">프로바이더 선택</label>
+          <div className="flex gap-3">
+            {(['ollama', 'inhouse'] as Provider[]).map((p) => (
+              <button
+                key={p}
+                onClick={() => handleChange('provider', p)}
+                className={`flex-1 py-3 px-4 rounded-lg border text-sm font-medium transition-all ${
+                  form.provider === p
+                    ? 'border-indigo-500 bg-indigo-500/10 text-indigo-300'
+                    : 'border-slate-600 bg-slate-900 text-slate-400 hover:border-slate-500'
+                }`}
+              >
+                <div className="text-base mb-0.5">{p === 'ollama' ? '🦙' : '🏢'}</div>
+                <div>{p === 'ollama' ? 'Ollama' : '사내 LLM'}</div>
+                <div className="text-xs opacity-70 mt-0.5">
+                  {p === 'ollama' ? '로컬 / 내부망' : 'OpenAI 호환 API'}
+                </div>
+                {currentProvider === p && (
+                  <div className="text-xs text-emerald-400 mt-1">현재 사용 중</div>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Ollama settings */}
+        {form.provider === 'ollama' && (
+          <div className="space-y-3 pt-1">
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Ollama URL</label>
+              <input
+                type="text"
+                value={form.ollama_base_url}
+                onChange={(e) => handleChange('ollama_base_url', e.target.value)}
+                placeholder="http://host.docker.internal:11434"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">모델명</label>
+              <input
+                type="text"
+                value={form.ollama_model}
+                onChange={(e) => handleChange('ollama_model', e.target.value)}
+                placeholder="exaone3.5:7.8b"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">
+                타임아웃 (초): <span className="text-indigo-400">{form.ollama_timeout}s</span>
+              </label>
+              <input
+                type="range" min={30} max={1800} step={30}
+                value={form.ollama_timeout}
+                onChange={(e) => handleChange('ollama_timeout', parseInt(e.target.value))}
+                className="w-full accent-indigo-500"
+              />
+              <div className="flex justify-between text-xs text-slate-600 mt-0.5">
+                <span>30s</span><span>30분</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* InHouse LLM settings */}
+        {form.provider === 'inhouse' && (
+          <div className="space-y-3 pt-1">
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">
+                API 엔드포인트 URL <span className="text-rose-400">*</span>
+              </label>
+              <input
+                type="text"
+                value={form.inhouse_llm_url}
+                onChange={(e) => handleChange('inhouse_llm_url', e.target.value)}
+                placeholder="http://llm-gateway.internal/v1"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
+              />
+              <p className="text-xs text-slate-600 mt-0.5">OpenAI 호환 API base URL (/v1 포함)</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">모델명 <span className="text-rose-400">*</span></label>
+              <input
+                type="text"
+                value={form.inhouse_llm_model}
+                onChange={(e) => handleChange('inhouse_llm_model', e.target.value)}
+                placeholder="exaone-32b"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">
+                API Key{' '}
+                {config?.inhouse.has_api_key && !form.inhouse_llm_api_key && (
+                  <span className="text-emerald-500">(등록됨 — 변경 시 입력)</span>
+                )}
+              </label>
+              <input
+                type="password"
+                value={form.inhouse_llm_api_key}
+                onChange={(e) => handleChange('inhouse_llm_api_key', e.target.value)}
+                placeholder={config?.inhouse.has_api_key ? '변경하려면 새 키를 입력...' : 'sk-... (없으면 비워두기)'}
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">
+                타임아웃 (초): <span className="text-indigo-400">{form.inhouse_llm_timeout}s</span>
+              </label>
+              <input
+                type="range" min={10} max={600} step={10}
+                value={form.inhouse_llm_timeout}
+                onChange={(e) => handleChange('inhouse_llm_timeout', parseInt(e.target.value))}
+                className="w-full accent-indigo-500"
+              />
+              <div className="flex justify-between text-xs text-slate-600 mt-0.5">
+                <span>10s</span><span>10분</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Test result */}
+      {testResult && (
+        <div className={`flex items-center gap-2 px-4 py-3 rounded-lg text-sm border ${
+          testResult.ok
+            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+            : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+        }`}>
+          {testResult.ok
+            ? <><CheckCircle2 className="w-4 h-4" /> 연결 성공 — LLM 서버가 응답합니다</>
+            : <><XCircle className="w-4 h-4" /> 연결 실패{testResult.error ? ` — ${testResult.error}` : ''}</>
+          }
+        </div>
+      )}
+
+      {saveMutation.isError && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-lg text-sm border bg-rose-500/10 border-rose-500/30 text-rose-300">
+          <XCircle className="w-4 h-4" /> 저장 실패: {String(saveMutation.error)}
+        </div>
+      )}
+
+      {/* Action buttons */}
+      <div className="flex gap-2">
+        <Button variant="secondary" size="sm" onClick={handleTest} loading={testing} disabled={!dirty && testResult !== null}>
+          <FlaskConical className="w-4 h-4" /> 연결 테스트
+        </Button>
+        <Button
+          variant="primary" size="sm"
+          onClick={handleSave}
+          loading={saveMutation.isPending}
+          disabled={!dirty}
+        >
+          <Save className="w-4 h-4" /> 저장 및 적용
+        </Button>
+      </div>
+
+      {/* Info box */}
+      <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 text-xs text-slate-500 space-y-1">
+        <p className="font-medium text-slate-400">참고사항</p>
+        <p>• <strong className="text-slate-300">저장 및 적용</strong>은 즉시 반영되며 컨테이너 재시작 전까지 유지됩니다.</p>
+        <p>• 영구 적용하려면 <code className="bg-slate-900 px-1 rounded">.env</code> 파일의 <code className="bg-slate-900 px-1 rounded">LLM_PROVIDER</code> 등을 직접 수정하세요.</p>
+        <p>• API Key는 보안상 조회 시 값을 반환하지 않습니다. 변경하지 않으면 기존 값이 유지됩니다.</p>
+      </div>
+
+      {/* Search thresholds */}
+      <ThresholdSettings />
+    </div>
+  );
+}
+
+
+// ── 검색 임계값 설정 컴포넌트 ──
+
+const THRESHOLD_FIELDS: { key: keyof SearchThresholds; label: string; desc: string; min: number; max: number; step: number; color: string }[] = [
+  { key: 'glossary_min_similarity', label: '용어 매핑 최소 유사도', desc: '이 값 이상이어야 용어 매핑이 활성화됩니다', min: 0, max: 1, step: 0.05, color: 'text-indigo-400' },
+  { key: 'fewshot_min_similarity', label: 'Few-shot 최소 유사도', desc: '이 값 이상이어야 Few-shot 예시에 포함됩니다', min: 0, max: 1, step: 0.05, color: 'text-amber-400' },
+  { key: 'knowledge_min_score', label: '검색결과 최소 점수', desc: '이 점수 미만의 결과는 LLM 컨텍스트에서 제외됩니다', min: 0, max: 1, step: 0.05, color: 'text-rose-400' },
+  { key: 'knowledge_high_score', label: '검색결과 높은 신뢰 기준', desc: '이 점수 이상이면 "높음" 신뢰도로 분류됩니다', min: 0, max: 1, step: 0.05, color: 'text-emerald-400' },
+  { key: 'knowledge_mid_score', label: '검색결과 보통 신뢰 기준', desc: '이 점수 이상이면 "보통", 미만이면 "낮음" 신뢰도', min: 0, max: 1, step: 0.05, color: 'text-sky-400' },
+];
+
+function ThresholdSettings() {
+  const qc = useQueryClient();
+  const [values, setValues] = useState<SearchThresholds | null>(null);
+  const [dirty, setDirty] = useState(false);
+
+  const { data: thresholds, isLoading } = useQuery({
+    queryKey: ['search-thresholds'],
+    queryFn: getSearchThresholds,
+    staleTime: 10_000,
+  });
+
+  useEffect(() => {
+    if (thresholds && !values) {
+      setValues(thresholds);
+    }
+  }, [thresholds, values]);
+
+  const saveMutation = useMutation({
+    mutationFn: (payload: Partial<SearchThresholds>) => updateSearchThresholds(payload),
+    onSuccess: (data: SearchThresholds) => {
+      qc.setQueryData(['search-thresholds'], data);
+      setValues(data);
+      setDirty(false);
+    },
+  });
+
+  const handleChange = (key: keyof SearchThresholds, val: number) => {
+    setValues((v) => v ? { ...v, [key]: val } : v);
+    setDirty(true);
+  };
+
+  const handleSave = () => {
+    if (!values) return;
+    saveMutation.mutate(values);
+  };
+
+  const handleReset = () => {
+    if (thresholds) {
+      setValues(thresholds);
+      setDirty(false);
+    }
+  };
+
+  if (isLoading || !values) {
+    return <div className="text-center py-6 text-slate-500 animate-pulse text-sm">임계값 로딩 중...</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-slate-200 flex items-center gap-2">
+          <SlidersHorizontal className="w-5 h-5 text-indigo-400" />
+          검색 임계값 설정
+        </h2>
+        <p className="text-xs text-slate-500 mt-0.5">
+          유사도 및 점수 임계값을 조정하여 검색 민감도를 제어합니다. 낮추면 더 많은 결과, 높이면 더 정확한 결과.
+        </p>
+      </div>
+
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 space-y-5">
+        {THRESHOLD_FIELDS.map(({ key, label, desc, min, max, step, color }) => (
+          <div key={key}>
+            <div className="flex justify-between text-xs mb-1">
+              <span className="font-medium text-slate-400">{label}</span>
+              <span className={`font-mono ${color}`}>{values[key].toFixed(2)}</span>
+            </div>
+            <input
+              type="range"
+              min={min} max={max} step={step}
+              value={values[key]}
+              onChange={(e) => handleChange(key, parseFloat(e.target.value))}
+              className="w-full accent-indigo-500"
+            />
+            <p className="text-[10px] text-slate-600 mt-0.5">{desc}</p>
+          </div>
+        ))}
+      </div>
+
+      {saveMutation.isError && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-lg text-sm border bg-rose-500/10 border-rose-500/30 text-rose-300">
+          <XCircle className="w-4 h-4" /> 저장 실패: {String(saveMutation.error)}
+        </div>
+      )}
+
+      {saveMutation.isSuccess && !dirty && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-lg text-sm border bg-emerald-500/10 border-emerald-500/30 text-emerald-300">
+          <CheckCircle2 className="w-4 h-4" /> 임계값이 적용되었습니다
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <Button variant="secondary" size="sm" onClick={handleReset} disabled={!dirty}>
+          초기화
+        </Button>
+        <Button
+          variant="primary" size="sm"
+          onClick={handleSave}
+          loading={saveMutation.isPending}
+          disabled={!dirty}
+        >
+          <Save className="w-4 h-4" /> 저장 및 적용
+        </Button>
+      </div>
+    </div>
+  );
+}

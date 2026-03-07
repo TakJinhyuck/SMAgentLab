@@ -715,10 +715,36 @@ with tab_debug:
                             st.markdown("**SQL 쿼리**")
                             st.code(r["query_template"], language="sql")
 
-            # ── 4. LLM에 전달될 컨텍스트 미리보기 ────────────────────────
+            # ── 4. Few-shot 베스트케이스 ──────────────────────────────────
             st.divider()
-            st.subheader("📝 Step 4 — LLM 컨텍스트 미리보기")
-            st.caption("실제 Chat 호출 시 이 내용이 LLM 프롬프트에 삽입됩니다.")
+            st.subheader("⭐ Step 4 — Few-shot 베스트케이스")
+            st.caption(
+                "👍 긍정 피드백이 누적된 Q&A 사례 중 현재 질문과 유사도 0.6 이상인 항목이 "
+                "LLM 프롬프트에 [과거 유사 질문 답변 사례] 섹션으로 함께 전달됩니다."
+            )
+            fewshots_list = result.get("fewshots", [])
+            if fewshots_list:
+                for fi, fs in enumerate(fewshots_list, 1):
+                    sim_pct = int(fs["similarity"] * 100)
+                    with st.expander(
+                        f"#{fi}  |  유사도 `{fs['similarity']:.4f}` ({sim_pct}%)  |  Q: {fs['question'][:60]}",
+                        expanded=True,
+                    ):
+                        st.markdown(f"**Q:** {fs['question']}")
+                        st.markdown(f"**A:** {fs['answer']}")
+            else:
+                st.info(
+                    "조회된 Few-shot 없음 — 아직 긍정 피드백(👍)이 없거나 "
+                    "유사도 0.6 이상인 사례가 없습니다."
+                )
+
+            # ── 5. LLM에 전달될 컨텍스트 미리보기 (전체) ─────────────────
+            st.divider()
+            st.subheader("📝 Step 5 — LLM 컨텍스트 미리보기 (전체)")
+            st.caption(
+                "Few-shot 섹션 + 검색 문서 섹션이 합쳐진 최종 컨텍스트입니다. "
+                "실제 Chat 호출 시 이 내용이 LLM 프롬프트에 삽입됩니다."
+            )
             ctx = result.get("context_preview", "")
             st.text_area("컨텍스트 (프롬프트 삽입 내용)", value=ctx, height=300, disabled=True)
 

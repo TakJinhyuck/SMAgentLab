@@ -89,6 +89,7 @@ class FeedbackCreate(BaseModel):
     question: str
     answer: Optional[str] = None
     is_positive: bool
+    message_id: Optional[int] = None
 
 
 # ─── Debug Search ────────────────────────────────────────────────────────────
@@ -111,6 +112,12 @@ class DebugResult(BaseModel):
     final_score: float
 
 
+class FewshotResult(BaseModel):
+    question: str
+    answer: str
+    similarity: float
+
+
 class DebugSearchResponse(BaseModel):
     question: str
     namespace: str
@@ -118,6 +125,7 @@ class DebugSearchResponse(BaseModel):
     glossary_match: Optional[GlossaryMatchInfo]
     w_vector: float
     w_keyword: float
+    fewshots: list[FewshotResult]
     results: list[DebugResult]
     context_preview: str
 
@@ -148,6 +156,7 @@ class ConversationResponse(BaseModel):
     id: int
     namespace: str
     title: str
+    trimmed: bool = False
     created_at: str
 
 
@@ -158,7 +167,32 @@ class MessageResponse(BaseModel):
     content: str
     mapped_term: Optional[str]
     results: Optional[list]
+    status: str = "completed"
+    has_feedback: bool = False
     created_at: str
+
+
+# ─── Fewshot ─────────────────────────────────────────────────────────────
+
+class FewshotOut(BaseModel):
+    id: int
+    namespace: str
+    question: str
+    answer: str
+    knowledge_id: Optional[int]
+    created_at: str
+
+
+class FewshotCreate(BaseModel):
+    namespace: str
+    question: str
+    answer: str
+    knowledge_id: Optional[int] = None
+
+
+class FewshotUpdate(BaseModel):
+    question: Optional[str] = None
+    answer: Optional[str] = None
 
 
 # ─── Stats ───────────────────────────────────────────────────────────────────
@@ -167,6 +201,7 @@ class NamespaceStats(BaseModel):
     namespace: str
     total_queries: int
     resolved: int
+    pending: int
     unresolved: int
     positive_feedback: int
     negative_feedback: int
@@ -182,6 +217,7 @@ class StatsResponse(BaseModel):
 class TermStat(BaseModel):
     term: str
     total: int
+    pending: int
     unresolved: int
 
 
@@ -189,6 +225,7 @@ class NamespaceDetailStats(BaseModel):
     namespace: str
     total_queries: int
     resolved: int
+    pending: int
     unresolved: int
     term_distribution: list[TermStat]
     unresolved_cases: list[dict]
