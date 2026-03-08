@@ -56,7 +56,6 @@ export async function bulkDeleteQueryLogs(ids: number[]): Promise<{ deleted: num
   try {
     return await apiFetch<{ deleted: number }>('/stats/query-logs/bulk-delete', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids }),
     });
   } catch (err) {

@@ -47,14 +47,15 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const url = `${BASE_URL}${path}`;
 
-  const doFetch = async (headers: Record<string, string>) => {
+  const doFetch = async (authHeaders: Record<string, string>) => {
+    const { headers: optHeaders, ...restOptions } = options ?? {};
     return fetch(url, {
+      ...restOptions,
       headers: {
         'Content-Type': 'application/json',
-        ...headers,
-        ...options?.headers,
+        ...authHeaders,
+        ...(optHeaders as Record<string, string>),
       },
-      ...options,
     });
   };
 
