@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Cpu, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Save, FlaskConical, SlidersHorizontal, KeyRound } from 'lucide-react';
+import { Cpu, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Save, FlaskConical, SlidersHorizontal, KeyRound, ChevronDown } from 'lucide-react';
 import { getLLMConfig, updateLLMConfig, testLLMConnection, getSearchThresholds, updateSearchThresholds, getSearchDefaults, updateSearchDefaults } from '../../api/llm';
 import type { LLMConfig, LLMConfigUpdate, SearchThresholds, SearchDefaults } from '../../api/llm';
 import { Button } from '../ui/Button';
@@ -107,15 +107,45 @@ function ConnectionBadge({ ok, checking }: { ok: boolean | null; checking?: bool
   );
 }
 
+function CollapsibleSection({ title, defaultOpen = true, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border border-slate-700 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-5 py-3 bg-slate-800/60 hover:bg-slate-800 transition-colors"
+      >
+        <span className="flex items-center gap-2 text-sm font-semibold text-slate-200">
+          <SlidersHorizontal className="w-4 h-4 text-indigo-400" />
+          {title}
+        </span>
+        <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && <div className="px-5 py-4">{children}</div>}
+    </div>
+  );
+}
+
 type SubTab = 'provider' | 'thresholds';
 
 export function LLMSettings() {
-  const [subTab, setSubTab] = useState<SubTab>('provider');
+  const [subTab, setSubTab] = useState<SubTab>('thresholds');
 
   return (
     <div className="max-w-2xl">
       {/* Sub-tab bar */}
       <div className="flex gap-1 mb-6 border-b border-slate-700">
+        <button
+          onClick={() => setSubTab('thresholds')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+            subTab === 'thresholds'
+              ? 'text-indigo-400 border-indigo-500'
+              : 'text-slate-400 border-transparent hover:text-slate-200 hover:border-slate-600'
+          }`}
+        >
+          <SlidersHorizontal className="w-3.5 h-3.5" />
+          검색 설정
+        </button>
         <button
           onClick={() => setSubTab('provider')}
           className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
@@ -127,26 +157,18 @@ export function LLMSettings() {
           <Cpu className="w-3.5 h-3.5" />
           LLM 프로바이더
         </button>
-        <button
-          onClick={() => setSubTab('thresholds')}
-          className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-            subTab === 'thresholds'
-              ? 'text-indigo-400 border-indigo-500'
-              : 'text-slate-400 border-transparent hover:text-slate-200 hover:border-slate-600'
-          }`}
-        >
-          <SlidersHorizontal className="w-3.5 h-3.5" />
-          검색 임계값
-        </button>
       </div>
 
       {subTab === 'provider' && <ProviderSettings />}
       {subTab === 'thresholds' && (
-        <>
-          <ThresholdSettings />
-          <div className="mt-8" />
-          <SearchDefaultsSettings />
-        </>
+        <div className="space-y-4">
+          <CollapsibleSection title="검색 기본값 설정" defaultOpen>
+            <SearchDefaultsSettings />
+          </CollapsibleSection>
+          <CollapsibleSection title="검색 임계값 설정" defaultOpen>
+            <ThresholdSettings />
+          </CollapsibleSection>
+        </div>
       )}
     </div>
   );
@@ -539,15 +561,9 @@ function ThresholdSettings() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-slate-200 flex items-center gap-2">
-          <SlidersHorizontal className="w-5 h-5 text-indigo-400" />
-          검색 임계값 설정
-        </h2>
-        <p className="text-xs text-slate-500 mt-0.5">
-          유사도 및 점수 임계값을 조정하여 검색 민감도를 제어합니다. 낮추면 더 많은 결과, 높이면 더 정확한 결과.
-        </p>
-      </div>
+      <p className="text-xs text-slate-500">
+        유사도 및 점수 임계값을 조정하여 검색 민감도를 제어합니다. 낮추면 더 많은 결과, 높이면 더 정확한 결과.
+      </p>
 
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 space-y-5">
         {THRESHOLD_FIELDS.map(({ key, label, desc, min, max, step, color }) => (
@@ -601,8 +617,8 @@ function ThresholdSettings() {
 // ── 검색 기본값 설정 컴포넌트 ──
 
 const SEARCH_DEFAULT_FIELDS: { key: keyof SearchDefaults; label: string; desc: string; min: number; max: number; step: number; color: string; format: (v: number) => string }[] = [
-  { key: 'default_w_vector', label: '의미 중심 (문맥 유사도) 가중치', desc: '벡터 검색의 가중치입니다. 키워드 가중치와 합이 1이 되도록 설정하세요.', min: 0, max: 1, step: 0.05, color: 'text-indigo-400', format: (v) => v.toFixed(2) },
-  { key: 'default_w_keyword', label: '키워드 중심 (단어 일치) 가중치', desc: 'BM25 키워드 검색의 가중치입니다.', min: 0, max: 1, step: 0.05, color: 'text-amber-400', format: (v) => v.toFixed(2) },
+  { key: 'default_w_vector', label: '의미 중심 (문맥 유사도) 가중치', desc: '벡터 검색의 가중치입니다. 키워드 가중치와 자동으로 합이 1이 됩니다.', min: 0, max: 1, step: 0.05, color: 'text-indigo-400', format: (v) => v.toFixed(2) },
+  { key: 'default_w_keyword', label: '키워드 중심 (단어 일치) 가중치', desc: 'BM25 키워드 검색의 가중치입니다. 의미 가중치와 자동으로 합이 1이 됩니다.', min: 0, max: 1, step: 0.05, color: 'text-amber-400', format: (v) => v.toFixed(2) },
   { key: 'default_top_k', label: '검색 결과 수 (Top-K)', desc: 'LLM에 전달할 최대 검색 결과 수입니다. (1~20)', min: 1, max: 20, step: 1, color: 'text-emerald-400', format: (v) => String(v) },
 ];
 
@@ -639,7 +655,16 @@ function SearchDefaultsSettings() {
   });
 
   const handleChange = (key: keyof SearchDefaults, val: number) => {
-    setValues((v) => v ? { ...v, [key]: val } : v);
+    setValues((v) => {
+      if (!v) return v;
+      if (key === 'default_w_vector') {
+        return { ...v, default_w_vector: val, default_w_keyword: Math.round((1 - val) * 100) / 100 };
+      }
+      if (key === 'default_w_keyword') {
+        return { ...v, default_w_keyword: val, default_w_vector: Math.round((1 - val) * 100) / 100 };
+      }
+      return { ...v, [key]: val };
+    });
     setDirty(true);
   };
 
@@ -661,15 +686,9 @@ function SearchDefaultsSettings() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-slate-200 flex items-center gap-2">
-          <SlidersHorizontal className="w-5 h-5 text-indigo-400" />
-          검색 기본값 설정
-        </h2>
-        <p className="text-xs text-slate-500 mt-0.5">
-          채팅 검색 시 사용되는 기본 가중치와 결과 수를 설정합니다. 사용자가 개별 조정하지 않으면 이 값이 적용됩니다.
-        </p>
-      </div>
+      <p className="text-xs text-slate-500">
+        채팅 검색 시 사용되는 기본 가중치와 결과 수를 설정합니다. 사용자가 개별 조정하지 않으면 이 값이 적용됩니다.
+      </p>
 
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 space-y-5">
         {SEARCH_DEFAULT_FIELDS.map(({ key, label, desc, min, max, step, color, format }) => (
