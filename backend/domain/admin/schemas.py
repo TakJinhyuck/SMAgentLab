@@ -67,6 +67,8 @@ class LLMConfigUpdate(BaseModel):
     inhouse_llm_url: Optional[str] = None
     inhouse_llm_api_key: Optional[str] = None
     inhouse_llm_model: Optional[str] = None
+    inhouse_llm_agent_code: Optional[str] = None
+    inhouse_llm_response_mode: Optional[str] = None
     inhouse_llm_timeout: Optional[int] = None
 
 
@@ -77,6 +79,8 @@ class LLMTestRequest(BaseModel):
     inhouse_llm_url: Optional[str] = None
     inhouse_llm_api_key: Optional[str] = None
     inhouse_llm_model: Optional[str] = None
+    inhouse_llm_agent_code: Optional[str] = None
+    inhouse_llm_response_mode: Optional[str] = None
 
 
 class ThresholdUpdate(BaseModel):

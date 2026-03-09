@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Trash2, Plus, Shield, User as UserIcon } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { getUsers, updateUser, deleteUser, getParts, createPart, deletePart } from '../../api/auth';
 import { useAuthStore } from '../../store/useAuthStore';
-import type { User, Part } from '../../types';
+import type { User } from '../../types';
 
 export function UserManager() {
   return (
@@ -18,47 +19,48 @@ export function UserManager() {
 // ── Part (부서) 관리 ────────────────────────────────────────────────────────
 
 function PartSection() {
-  const [parts, setParts] = useState<Part[]>([]);
+  const qc = useQueryClient();
   const [newName, setNewName] = useState('');
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const load = useCallback(async () => {
-    try {
-      const data = await getParts();
-      setParts(data);
-    } catch (err) {
-      console.error(err);
-    }
-  }, []);
+  const { data: parts = [] } = useQuery({
+    queryKey: ['parts'],
+    queryFn: getParts,
+  });
 
-  useEffect(() => { load(); }, [load]);
+  const createMutation = useMutation({
+    mutationFn: (name: string) => createPart(name),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['parts'] });
+      qc.invalidateQueries({ queryKey: ['users'] });
+      setNewName('');
+      setError('');
+    },
+    onError: (err: Error) => {
+      setError(err.message || '파트 생성 실패');
+    },
+  });
 
-  const handleCreate = async () => {
-    if (!newName.trim() || loading) return;
-    setLoading(true);
+  const deleteMutation = useMutation({
+    mutationFn: (partId: number) => deletePart(partId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['parts'] });
+      qc.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: (err: Error) => {
+      alert(err.message || '파트 삭제 실패');
+    },
+  });
+
+  const handleCreate = () => {
+    if (!newName.trim() || createMutation.isPending) return;
     setError('');
-    const name = newName.trim();
-    setNewName('');
-    try {
-      await createPart(name);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '파트 생성 실패');
-      setNewName(name);
-    } finally {
-      setLoading(false);
-    }
+    createMutation.mutate(newName.trim());
   };
 
-  const handleDelete = async (partId: number) => {
+  const handleDelete = (partId: number) => {
     if (!confirm('이 파트를 삭제하시겠습니까?')) return;
-    try {
-      await deletePart(partId);
-      await load();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : '파트 삭제 실패');
-    }
+    deleteMutation.mutate(partId);
   };
 
   return (
@@ -73,7 +75,7 @@ function PartSection() {
             placeholder="새 파트 이름"
             className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
           />
-          <Button onClick={handleCreate} loading={loading} size="sm">
+          <Button onClick={handleCreate} loading={createMutation.isPending} size="sm">
             <Plus className="w-4 h-4" />
             추가
           </Button>
@@ -106,65 +108,57 @@ function PartSection() {
 // ── 사용자 관리 ─────────────────────────────────────────────────────────────
 
 function UserSection() {
+  const qc = useQueryClient();
   const currentUser = useAuthStore((s) => s.user);
-  const [users, setUsers] = useState<User[]>([]);
-  const [parts, setParts] = useState<Part[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [u, p] = await Promise.all([getUsers(), getParts()]);
-      setUsers(u);
-      setParts(p);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const { data: users = [], isLoading } = useQuery({
+    queryKey: ['users'],
+    queryFn: getUsers,
+  });
 
-  useEffect(() => { load(); }, [load]);
+  const { data: parts = [] } = useQuery({
+    queryKey: ['parts'],
+    queryFn: getParts,
+  });
 
-  const handleToggleRole = async (u: User) => {
-    const newRole = u.role === 'admin' ? 'user' : 'admin';
-    try {
-      await updateUser(u.id, { role: newRole });
-      await load();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : '역할 변경 실패');
-    }
+  const updateMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: Record<string, unknown> }) => updateUser(id, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: (err: Error) => {
+      alert(err.message || '변경 실패');
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => deleteUser(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: (err: Error) => {
+      alert(err.message || '사용자 삭제 실패');
+    },
+  });
+
+  const handleToggleRole = (u: User) => {
+    updateMutation.mutate({ id: u.id, payload: { role: u.role === 'admin' ? 'user' : 'admin' } });
   };
 
-  const handleToggleActive = async (u: User) => {
-    try {
-      await updateUser(u.id, { is_active: !u.is_active });
-      await load();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : '상태 변경 실패');
-    }
+  const handleToggleActive = (u: User) => {
+    updateMutation.mutate({ id: u.id, payload: { is_active: !u.is_active } });
   };
 
-  const handleChangePart = async (u: User, part: string) => {
-    try {
-      await updateUser(u.id, { part });
-      await load();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : '파트 변경 실패');
-    }
+  const handleChangePart = (u: User, part: string) => {
+    updateMutation.mutate({ id: u.id, payload: { part } });
   };
 
-  const handleDelete = async (u: User) => {
+  const handleDelete = (u: User) => {
     if (!confirm(`'${u.username}' 사용자를 삭제하시겠습니까?`)) return;
-    try {
-      await deleteUser(u.id);
-      await load();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : '사용자 삭제 실패');
-    }
+    deleteMutation.mutate(u.id);
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div>
         <h3 className="text-lg font-semibold text-slate-100 mb-4">사용자 목록</h3>

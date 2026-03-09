@@ -18,6 +18,7 @@ from domain.chat.schemas import (
     DebugSearchResponse, GlossaryMatchInfo, DebugResult, FewshotResult,
     ConversationCreate, ConversationResponse, MessageResponse,
 )
+from core.config import settings
 from domain.llm.factory import get_llm_provider
 from domain.knowledge import retrieval
 from domain.chat import memory
@@ -104,6 +105,17 @@ def _get_user_api_key(user: dict) -> Optional[str]:
         return decrypt_api_key(encrypted)
     except Exception:
         return None
+
+
+def _require_api_key(user: dict) -> str:
+    """사내 LLM 사용 시 사용자 API Key가 필수. 없으면 HTTPException."""
+    key = _get_user_api_key(user)
+    if not key and settings.llm_provider == "inhouse":
+        raise HTTPException(
+            status_code=403,
+            detail="사내 LLM 사용을 위해 API Key가 필요합니다. 프로필에서 API Key를 등록해주세요.",
+        )
+    return key
 
 
 # ── DB 헬퍼 ──────────────────────────────────────────────────────────────────
@@ -272,7 +284,7 @@ async def cleanup_resolved_query_logs() -> int:
 
 @router.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest, user: dict = Depends(get_current_user)):
-    api_key = _get_user_api_key(user)
+    api_key = _require_api_key(user)
     conv_id = await _get_or_create_conversation(req.namespace, req.question, req.conversation_id, user["id"])
     query_vec = await embedding_service.embed(req.question)
 
@@ -304,7 +316,7 @@ async def chat(req: ChatRequest, user: dict = Depends(get_current_user)):
 
 @router.post("/api/chat/stream")
 async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
-    api_key = _get_user_api_key(user)
+    api_key = _require_api_key(user)
     conv_id = await _get_or_create_conversation(req.namespace, req.question, req.conversation_id, user["id"])
     await _cleanup_ghost_messages(conv_id)
 

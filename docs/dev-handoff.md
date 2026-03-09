@@ -32,8 +32,8 @@ docker compose up --build -d
 
 ## 현재 작업 상태
 
-> **마지막 업데이트**: 2026-03-08 (v2 커밋)
-> **작업 PC**: PC-A
+> **마지막 업데이트**: 2026-03-09
+> **작업 PC**: PC-B (Windows 11)
 > **브랜치**: main
 
 ### 완료된 작업
@@ -59,6 +59,21 @@ docker compose up --build -d
 - [x] 통계 질의 로그 권한: admin 전용 → 네임스페이스 파트 기반으로 변경
 - [x] 프론트엔드 mutation 에러 표시 전반 보강 (Knowledge/Glossary/Fewshot/Stats)
 - [x] 권한 없는 사용자에게 CUD 버튼 숨김 + 안내 메시지 (StatsPanel)
+- [x] **사내 LLM (DevX MCP API) 연동**
+  - `agent_code` → `usecase_code` 필드명 변경
+  - `inputs.model` 파라미터로 모델 선택 (GPT 5.2 / Claude Sonnet 4.5 / Gemini 3.0 Pro)
+  - `response_mode` (streaming/blocking) 설정 지원
+  - SSE 파서 수정: DevX 비표준 형식 대응 (`data:` JSON 안에 `event` 포함)
+  - health_check: 401/403도 서버 도달 가능으로 판정
+- [x] **per-user API Key 지원**
+  - DB에 Fernet 암호화 저장, 요청 시 복호화하여 Authorization 헤더 전송
+  - 프론트엔드: API Key 마스킹 표시 (읽기 전용)
+- [x] **LLM 모델 선택 UI** (Admin > LLM 설정)
+  - 3종 모델 카드 (아이콘 + 색상), 토글 방식 선택/해제
+  - 미선택 시 Agent 기본 모델 사용
+- [x] **apiFetch headers 덮어쓰기 버그 수정**
+- [x] **회원가입 시 '기본' 파트 드롭다운 제외**
+- [x] **UserManager 파트 변경 시 즉시 UI 반영** (TanStack Query invalidation)
 
 ### 진행 중 / 미완료 작업
 
@@ -112,6 +127,8 @@ docs/
 ├── user-manual.md          # 사용자 매뉴얼
 ├── multi-turn-memory.md    # 대화 메모리 설계
 ├── flow.md                 # 처리 흐름도
+├── data-migration.md       # 데이터 이관 가이드 (로컬→릴리즈)
+├── sse-streaming-manual.md # SSE 스트리밍 매뉴얼
 └── dev-handoff.md          # ← 이 문서
 ```
 

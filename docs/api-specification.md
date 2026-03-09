@@ -1210,22 +1210,44 @@ Few-shot 예제를 삭제한다.
 
 ```json
 {
-  "provider": "ollama",
-  "ollama_base_url": "http://host.docker.internal:11434",
-  "ollama_model": "exaone3.5:2.4b",
-  "ollama_timeout": 120,
-  "inhouse_llm_url": null,
-  "inhouse_llm_model": null,
-  "inhouse_llm_timeout": 120,
+  "provider": "inhouse",
+  "is_runtime_override": true,
+  "ollama": {
+    "base_url": "http://host.docker.internal:11434",
+    "model": "exaone3.5:7.8b",
+    "timeout": 900
+  },
+  "inhouse": {
+    "url": "https://devx-mcp-api.example.com/api/v1/mcp-command/chat",
+    "agent_code": "playground",
+    "model": "claude-sonnet-4.5",
+    "has_api_key": true,
+    "response_mode": "streaming",
+    "timeout": 120
+  },
   "is_connected": true
 }
 ```
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `provider` | string | 현재 LLM 프로바이더 (`ollama` \| `inhouse`) |
+| `is_runtime_override` | bool | 런타임 오버라이드 여부 (`true`면 관리자가 UI에서 변경한 값 사용 중, 컨테이너 재시작 시 `.env` 기본값으로 복귀) |
+| `ollama` | object | Ollama 설정 (`base_url`, `model`, `timeout`) |
+| `inhouse` | object | 사내 LLM 설정 |
+| `inhouse.url` | string | DevX MCP API 엔드포인트 URL |
+| `inhouse.agent_code` | string | DevX usecase_code |
+| `inhouse.model` | string | 선택된 모델 (`gpt-5.2`, `claude-sonnet-4.5`, `gemini-3.0-pro`, 빈 문자열=기본) |
+| `inhouse.has_api_key` | bool | 시스템 API 키 존재 여부 |
+| `inhouse.response_mode` | string | 응답 방식 (`streaming` \| `blocking`) |
+| `inhouse.timeout` | int | 타임아웃 (초) |
+| `is_connected` | bool | LLM 서버 연결 상태 |
 
 ---
 
 ### PUT /api/llm/config
 
-LLM 프로바이더를 전환하거나 설정을 변경한다.
+LLM 프로바이더를 전환하거나 설정을 변경한다. 런타임 오버라이드로 적용되며, 컨테이너 재시작 시 `.env` 기본값으로 복귀한다.
 
 > **권한**: admin 전용
 
@@ -1237,12 +1259,14 @@ LLM 프로바이더를 전환하거나 설정을 변경한다.
 | `ollama_base_url` | string | X | Ollama 서버 URL |
 | `ollama_model` | string | X | Ollama 모델명 |
 | `ollama_timeout` | int | X | 타임아웃 (초) |
-| `inhouse_llm_url` | string | X | 사내 LLM URL |
-| `inhouse_llm_api_key` | string | X | API 키 |
-| `inhouse_llm_model` | string | X | 모델명 |
+| `inhouse_llm_url` | string | X | DevX MCP API URL |
+| `inhouse_llm_api_key` | string | X | API 키 (Bearer 토큰) |
+| `inhouse_llm_model` | string | X | 모델명 (gpt-5.2, claude-sonnet-4.5, gemini-3.0-pro) |
+| `inhouse_llm_agent_code` | string | X | DevX usecase_code |
+| `inhouse_llm_response_mode` | string | X | 응답 방식 (`streaming` \| `blocking`) |
 | `inhouse_llm_timeout` | int | X | 타임아웃 (초) |
 
-**Response** `200 OK` — 갱신된 설정 + `is_connected`
+**Response** `200 OK` — 갱신된 설정 (GET /api/llm/config 형식) + `is_connected`
 
 **Error** `400 Bad Request` (유효하지 않은 provider), `422 Unprocessable Entity`
 
@@ -1259,16 +1283,18 @@ LLM 프로바이더 연결을 테스트한다. 실제 전환하지 않는다.
 | `provider` | string | O | 테스트할 프로바이더 |
 | `ollama_base_url` | string | X | Ollama URL |
 | `ollama_model` | string | X | 모델명 |
-| `inhouse_llm_url` | string | X | 사내 LLM URL |
+| `inhouse_llm_url` | string | X | DevX MCP API URL |
 | `inhouse_llm_api_key` | string | X | API 키 |
 | `inhouse_llm_model` | string | X | 모델명 |
+| `inhouse_llm_agent_code` | string | X | usecase_code |
+| `inhouse_llm_response_mode` | string | X | 응답 방식 |
 
 **Response** `200 OK`
 
 ```json
 {
   "is_connected": true,
-  "provider": "ollama",
+  "provider": "inhouse",
   "error": null
 }
 ```

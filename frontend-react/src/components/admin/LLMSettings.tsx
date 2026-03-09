@@ -1,11 +1,30 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Cpu, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Save, FlaskConical, SlidersHorizontal } from 'lucide-react';
+import { Cpu, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Save, FlaskConical, SlidersHorizontal, KeyRound } from 'lucide-react';
 import { getLLMConfig, updateLLMConfig, testLLMConnection, getSearchThresholds, updateSearchThresholds } from '../../api/llm';
 import type { LLMConfig, LLMConfigUpdate, SearchThresholds } from '../../api/llm';
 import { Button } from '../ui/Button';
+import { useAuthStore } from '../../store/useAuthStore';
 
 type Provider = 'ollama' | 'inhouse';
+
+type ResponseMode = 'streaming' | 'blocking';
+
+type InhouseModel = 'gpt-5.2' | 'claude-sonnet-4.5' | 'gemini-3.0-pro' | '';
+
+interface InhouseModelOption {
+  id: InhouseModel;
+  label: string;
+  desc: string;
+  icon: string;
+  color: string;
+}
+
+const INHOUSE_MODELS: InhouseModelOption[] = [
+  { id: 'gpt-5.2', label: 'GPT 5.2', desc: 'OpenAI', icon: '🟢', color: 'border-emerald-500 bg-emerald-500/10 text-emerald-300' },
+  { id: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5', desc: 'Anthropic', icon: '🟠', color: 'border-orange-500 bg-orange-500/10 text-orange-300' },
+  { id: 'gemini-3.0-pro', label: 'Gemini 3.0 Pro', desc: 'Google', icon: '🔵', color: 'border-blue-500 bg-blue-500/10 text-blue-300' },
+];
 
 interface FormState {
   provider: Provider;
@@ -13,8 +32,9 @@ interface FormState {
   ollama_model: string;
   ollama_timeout: number;
   inhouse_llm_url: string;
-  inhouse_llm_api_key: string;
-  inhouse_llm_model: string;
+  inhouse_llm_agent_code: string;
+  inhouse_llm_model: InhouseModel;
+  inhouse_llm_response_mode: ResponseMode;
   inhouse_llm_timeout: number;
 }
 
@@ -25,8 +45,9 @@ function configToForm(cfg: LLMConfig): FormState {
     ollama_model: cfg.ollama.model,
     ollama_timeout: cfg.ollama.timeout,
     inhouse_llm_url: cfg.inhouse.url,
-    inhouse_llm_api_key: '',  // API 키는 서버에서 내려주지 않음 (has_api_key만 표시)
-    inhouse_llm_model: cfg.inhouse.model,
+    inhouse_llm_agent_code: cfg.inhouse.agent_code,
+    inhouse_llm_model: (cfg.inhouse.model as InhouseModel) || '',
+    inhouse_llm_response_mode: (cfg.inhouse.response_mode as ResponseMode) || 'streaming',
     inhouse_llm_timeout: cfg.inhouse.timeout,
   };
 }
@@ -52,6 +73,7 @@ function ConnectionBadge({ ok, checking }: { ok: boolean | null; checking?: bool
 
 export function LLMSettings() {
   const qc = useQueryClient();
+  const user = useAuthStore((s) => s.user);
   const [form, setForm] = useState<FormState | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null);
   const [testing, setTesting] = useState(false);
@@ -95,9 +117,10 @@ export function LLMSettings() {
       payload.ollama_timeout = form.ollama_timeout;
     } else {
       payload.inhouse_llm_url = form.inhouse_llm_url;
-      payload.inhouse_llm_model = form.inhouse_llm_model;
+      payload.inhouse_llm_agent_code = form.inhouse_llm_agent_code;
+      payload.inhouse_llm_model = form.inhouse_llm_model || undefined;
+      payload.inhouse_llm_response_mode = form.inhouse_llm_response_mode;
       payload.inhouse_llm_timeout = form.inhouse_llm_timeout;
-      if (form.inhouse_llm_api_key) payload.inhouse_llm_api_key = form.inhouse_llm_api_key;
     }
     return payload;
   };
@@ -157,7 +180,7 @@ export function LLMSettings() {
         <div>
           <label className="block text-xs font-medium text-slate-400 mb-2">프로바이더 선택</label>
           <div className="flex gap-3">
-            {(['ollama', 'inhouse'] as Provider[]).map((p) => (
+            {(['inhouse', 'ollama'] as Provider[]).map((p) => (
               <button
                 key={p}
                 onClick={() => handleChange('provider', p)}
@@ -170,7 +193,7 @@ export function LLMSettings() {
                 <div className="text-base mb-0.5">{p === 'ollama' ? '🦙' : '🏢'}</div>
                 <div>{p === 'ollama' ? 'Ollama' : '사내 LLM'}</div>
                 <div className="text-xs opacity-70 mt-0.5">
-                  {p === 'ollama' ? '로컬 / 내부망' : 'OpenAI 호환 API'}
+                  {p === 'ollama' ? '로컬 / 내부망' : 'DevX MCP API'}
                 </div>
                 {currentProvider === p && (
                   <div className="text-xs text-emerald-400 mt-1">현재 사용 중</div>
@@ -179,6 +202,111 @@ export function LLMSettings() {
             ))}
           </div>
         </div>
+
+        {/* InHouse LLM model selector */}
+        {form.provider === 'inhouse' && (
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-2">모델 선택</label>
+            <div className="grid grid-cols-3 gap-2">
+              {INHOUSE_MODELS.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => handleChange('inhouse_llm_model', form.inhouse_llm_model === m.id ? '' as InhouseModel : m.id)}
+                  className={`py-2.5 px-3 rounded-lg border text-sm font-medium transition-all text-center ${
+                    form.inhouse_llm_model === m.id
+                      ? m.color
+                      : 'border-slate-600 bg-slate-900 text-slate-500 hover:border-slate-400 hover:text-slate-300'
+                  }`}
+                >
+                  <div className={`text-lg mb-0.5 transition-all ${form.inhouse_llm_model === m.id ? '' : 'grayscale opacity-40'}`}>{m.icon}</div>
+                  <div className="text-xs font-semibold">{m.label}</div>
+                  <div className="text-[10px] opacity-60 mt-0.5">{m.desc}</div>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-slate-600 mt-1.5">inputs.model 파라미터로 전달됩니다. 미선택 시 Agent 기본 모델 사용.</p>
+          </div>
+        )}
+
+        {/* InHouse LLM settings */}
+        {form.provider === 'inhouse' && (
+          <div className="space-y-3 pt-1">
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">
+                API 엔드포인트 URL <span className="text-rose-400">*</span>
+              </label>
+              <input
+                type="text"
+                value={form.inhouse_llm_url}
+                onChange={(e) => handleChange('inhouse_llm_url', e.target.value)}
+                placeholder="https://devx-mcp-api.shinsegae-inc.com/api/v1/mcp-command/chat"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
+              />
+              <p className="text-xs text-slate-600 mt-0.5">DevX MCP API 엔드포인트 (전체 URL)</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Agent Code <span className="text-rose-400">*</span></label>
+              <input
+                type="text"
+                value={form.inhouse_llm_agent_code}
+                onChange={(e) => handleChange('inhouse_llm_agent_code', e.target.value)}
+                placeholder="playground"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">응답 방식</label>
+              <div className="flex gap-2">
+                {(['streaming', 'blocking'] as ResponseMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => handleChange('inhouse_llm_response_mode', mode)}
+                    className={`flex-1 py-2 px-3 rounded-lg border text-xs font-medium transition-all ${
+                      form.inhouse_llm_response_mode === mode
+                        ? 'border-indigo-500 bg-indigo-500/10 text-indigo-300'
+                        : 'border-slate-600 bg-slate-900 text-slate-400 hover:border-slate-500'
+                    }`}
+                  >
+                    {mode === 'streaming' ? 'Streaming (실시간)' : 'Blocking (일괄)'}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-slate-600 mt-0.5">
+                {form.inhouse_llm_response_mode === 'streaming'
+                  ? 'SSE 스트리밍 — 토큰 단위로 실시간 표시'
+                  : 'Blocking — 전체 응답을 한번에 수신'}
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">
+                내 API Key
+              </label>
+              <div className={`w-full bg-slate-900/50 border rounded-lg px-3 py-2 text-sm font-mono flex items-center gap-2 ${
+                user?.has_api_key ? 'border-emerald-500/30 text-emerald-400' : 'border-slate-600 text-slate-500'
+              }`}>
+                <KeyRound className="w-3.5 h-3.5 flex-shrink-0" />
+                {user?.has_api_key ? '••••••••••••••••  (등록됨)' : '미등록 — 프로필에서 API Key를 등록해주세요'}
+              </div>
+              <p className="text-xs text-slate-600 mt-0.5">
+                API Key는 프로필 설정에서 등록/변경할 수 있습니다. 각 사용자별로 개별 관리됩니다.
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">
+                타임아웃 (초): <span className="text-indigo-400">{form.inhouse_llm_timeout}s</span>
+              </label>
+              <input
+                type="range" min={10} max={600} step={10}
+                value={form.inhouse_llm_timeout}
+                onChange={(e) => handleChange('inhouse_llm_timeout', parseInt(e.target.value))}
+                className="w-full accent-indigo-500"
+              />
+              <div className="flex justify-between text-xs text-slate-600 mt-0.5">
+                <span>10s</span><span>10분</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Ollama settings */}
         {form.provider === 'ollama' && (
@@ -215,64 +343,6 @@ export function LLMSettings() {
               />
               <div className="flex justify-between text-xs text-slate-600 mt-0.5">
                 <span>30s</span><span>30분</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* InHouse LLM settings */}
-        {form.provider === 'inhouse' && (
-          <div className="space-y-3 pt-1">
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
-                API 엔드포인트 URL <span className="text-rose-400">*</span>
-              </label>
-              <input
-                type="text"
-                value={form.inhouse_llm_url}
-                onChange={(e) => handleChange('inhouse_llm_url', e.target.value)}
-                placeholder="http://llm-gateway.internal/v1"
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
-              />
-              <p className="text-xs text-slate-600 mt-0.5">OpenAI 호환 API base URL (/v1 포함)</p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">모델명 <span className="text-rose-400">*</span></label>
-              <input
-                type="text"
-                value={form.inhouse_llm_model}
-                onChange={(e) => handleChange('inhouse_llm_model', e.target.value)}
-                placeholder="exaone-32b"
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
-                API Key{' '}
-                {config?.inhouse.has_api_key && !form.inhouse_llm_api_key && (
-                  <span className="text-emerald-500">(등록됨 — 변경 시 입력)</span>
-                )}
-              </label>
-              <input
-                type="password"
-                value={form.inhouse_llm_api_key}
-                onChange={(e) => handleChange('inhouse_llm_api_key', e.target.value)}
-                placeholder={config?.inhouse.has_api_key ? '변경하려면 새 키를 입력...' : 'sk-... (없으면 비워두기)'}
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
-                타임아웃 (초): <span className="text-indigo-400">{form.inhouse_llm_timeout}s</span>
-              </label>
-              <input
-                type="range" min={10} max={600} step={10}
-                value={form.inhouse_llm_timeout}
-                onChange={(e) => handleChange('inhouse_llm_timeout', parseInt(e.target.value))}
-                className="w-full accent-indigo-500"
-              />
-              <div className="flex justify-between text-xs text-slate-600 mt-0.5">
-                <span>10s</span><span>10분</span>
               </div>
             </div>
           </div>
@@ -319,7 +389,7 @@ export function LLMSettings() {
         <p className="font-medium text-slate-400">참고사항</p>
         <p>• <strong className="text-slate-300">저장 및 적용</strong>은 즉시 반영되며 컨테이너 재시작 전까지 유지됩니다.</p>
         <p>• 영구 적용하려면 <code className="bg-slate-900 px-1 rounded">.env</code> 파일의 <code className="bg-slate-900 px-1 rounded">LLM_PROVIDER</code> 등을 직접 수정하세요.</p>
-        <p>• API Key는 보안상 조회 시 값을 반환하지 않습니다. 변경하지 않으면 기존 값이 유지됩니다.</p>
+        <p>• API Key는 각 사용자가 프로필 설정에서 개별 등록합니다. 이 화면에서는 변경할 수 없습니다.</p>
       </div>
 
       {/* Search thresholds */}

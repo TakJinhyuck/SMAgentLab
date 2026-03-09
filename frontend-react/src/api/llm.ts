@@ -11,8 +11,10 @@ export interface LLMConfig {
   };
   inhouse: {
     url: string;
+    agent_code: string;
     model: string;
     has_api_key: boolean;
+    response_mode: string;
     timeout: number;
   };
 }
@@ -23,8 +25,9 @@ export interface LLMConfigUpdate {
   ollama_model?: string;
   ollama_timeout?: number;
   inhouse_llm_url?: string;
-  inhouse_llm_api_key?: string;
+  inhouse_llm_agent_code?: string;
   inhouse_llm_model?: string;
+  inhouse_llm_response_mode?: string;
   inhouse_llm_timeout?: number;
 }
 

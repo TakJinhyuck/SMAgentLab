@@ -50,8 +50,10 @@ def get_runtime_config() -> dict:
         },
         "inhouse": {
             "url": cfg.get("inhouse_llm_url", settings.inhouse_llm_url),
-            "model": cfg.get("inhouse_llm_model", settings.inhouse_llm_model),
+            "agent_code": cfg.get("inhouse_llm_agent_code", settings.inhouse_llm_agent_code),
+            "model": cfg.get("inhouse_llm_model", settings.inhouse_llm_model) or "",
             "has_api_key": bool(cfg.get("inhouse_llm_api_key", settings.inhouse_llm_api_key)),
+            "response_mode": cfg.get("inhouse_llm_response_mode", settings.inhouse_llm_response_mode),
             "timeout": cfg.get("inhouse_llm_timeout", settings.inhouse_llm_timeout),
         },
     }

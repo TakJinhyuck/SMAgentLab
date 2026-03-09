@@ -11,17 +11,19 @@ class Settings(BaseSettings):
     vector_dim: int = 768
 
     # LLM Provider ("ollama" | "inhouse")
-    llm_provider: str = "ollama"
+    llm_provider: str = "inhouse"
 
     # Ollama
     ollama_base_url: str = "http://host.docker.internal:11434"
     ollama_model: str = "exaone3.5:7.8b"
     ollama_timeout: int = 900
 
-    # 사내 LLM (OpenAI 호환)
+    # 사내 LLM (DevX MCP API)
     inhouse_llm_url: str = ""
     inhouse_llm_api_key: str = ""
-    inhouse_llm_model: str = ""
+    inhouse_llm_model: str = ""          # inputs.model (예: gpt-5.1, claude-sonnet-4.5, gemini-3.0-pro)
+    inhouse_llm_agent_code: str = "playground"
+    inhouse_llm_response_mode: str = "streaming"
     inhouse_llm_timeout: int = 120
 
     # 검색 기본값

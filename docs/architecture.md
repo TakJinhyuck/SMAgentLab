@@ -100,7 +100,7 @@ backend/
 │   └── llm/             # LLM Provider
 │       ├── base.py      #   LLMProvider 추상 클래스 + build_messages()
 │       ├── ollama.py    #   OllamaProvider — /api/chat (multi-turn messages 배열)
-│       ├── inhouse.py   #   InHouseLLMProvider (OpenAI 호환 /v1/chat/completions)
+│       ├── inhouse.py   #   InHouseLLMProvider (DevX MCP API — usecase_code, inputs.model, SSE)
 │       └── factory.py   #   get_llm_provider() 팩토리 (싱글톤), switch_provider()
 ```
 
@@ -109,7 +109,7 @@ backend/
 - **비동기 전용**: asyncpg + httpx async — 블로킹 없는 I/O
 - **임베딩 싱글톤**: 앱 시작 시 모델 1회 로드, 이후 thread executor로 재사용
 - **LLM Provider 패턴**: `ollama` / `inhouse` 환경변수 하나로 교체 가능
-- **GPT 방식 Multi-turn**: `build_messages()`로 system+history+user messages 배열 생성 → Ollama `/api/chat`, InHouse `/v1/chat/completions`에 동일 형식 전달
+- **LLM별 프롬프트 형식**: Ollama는 `build_messages()` messages 배열, InHouse(DevX MCP API)는 `_build_query()`로 단일 query 문자열 생성
 - **대화 맥락**: ConversationSummaryBuffer + Semantic Recall — 오래된 교환을 LLM으로 요약·벡터 저장, 현재 질문과 유사한 과거 요약 + 최근 2회 raw 교환을 history로 LLM에 전달
 - **JWT 인증/인가**: Access Token(30분) + Refresh Token(7일), FastAPI Depends로 라우터 수준 보호
 - **네임스페이스 소유 파트 기반 권한**: 네임스페이스의 `owner_part`와 동일한 부서 구성원만 해당 네임스페이스의 데이터 CRUD 가능, 타 부서는 읽기 전용. `owner_part` NULL이면 admin만 수정/삭제 가능. Admin은 모든 권한 보유
@@ -304,8 +304,10 @@ class LLMProvider(ABC):
 
 # 현재 구현체
 OllamaProvider     # LLM_PROVIDER=ollama — /api/chat (messages 배열, multi-turn)
-InHouseLLMProvider # LLM_PROVIDER=inhouse — /v1/chat/completions (messages 배열, multi-turn)
-                   #   api_key 파라미터가 전달되면 시스템 기본 키 대신 사용자 개인 키로 요청
+InHouseLLMProvider # LLM_PROVIDER=inhouse — DevX MCP API (usecase_code, query, response_mode)
+                   #   inputs.model로 모델 선택 (GPT 5.2 / Claude Sonnet 4.5 / Gemini 3.0 Pro)
+                   #   SSE: data JSON 안에 event 필드 포함하는 비표준 형식 대응
+                   #   api_key: per-user 키 우선, 없으면 시스템 기본 키 사용
 ```
 
 **`api_key` 파라미터 (v2.0.0 신규):**
@@ -345,13 +347,15 @@ messages = [
 | 변수 | 기본값 | 설명 |
 |------|--------|------|
 | `DATABASE_URL` | `postgresql://ops:ops1234@postgres:5432/opsdb` | DB 연결 문자열 |
-| `LLM_PROVIDER` | `ollama` | `ollama` 또는 `inhouse` |
+| `LLM_PROVIDER` | `inhouse` | `ollama` 또는 `inhouse` |
 | `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | Ollama 서버 주소 |
-| `OLLAMA_MODEL` | `exaone3.5:2.4b` | 사용할 Ollama 모델명 |
+| `OLLAMA_MODEL` | `exaone3.5:7.8b` | 사용할 Ollama 모델명 |
 | `OLLAMA_TIMEOUT` | `900` | CPU 추론 최대 대기 시간(초), httpx read timeout에 적용 |
-| `INHOUSE_LLM_URL` | (없음) | 사내 LLM API 주소 |
-| `INHOUSE_LLM_API_KEY` | (없음) | 사내 LLM 시스템 기본 API 키 |
-| `INHOUSE_LLM_MODEL` | (없음) | 사내 LLM 모델명 |
+| `INHOUSE_LLM_URL` | (없음) | DevX MCP API 엔드포인트 URL |
+| `INHOUSE_LLM_API_KEY` | (없음) | 사내 LLM 시스템 기본 API 키 (Bearer 토큰) |
+| `INHOUSE_LLM_MODEL` | (없음) | inputs.model 파라미터 (gpt-5.2, claude-sonnet-4.5, gemini-3.0-pro) |
+| `INHOUSE_LLM_AGENT_CODE` | `playground` | DevX usecase_code |
+| `INHOUSE_LLM_RESPONSE_MODE` | `streaming` | 응답 방식 (`streaming` \| `blocking`) |
 | `EMBEDDING_MODEL` | `paraphrase-multilingual-mpnet-base-v2` | 임베딩 모델명 |
 | `VECTOR_DIM` | `768` | 벡터 차원 수 |
 | `DEFAULT_TOP_K` | `5` | 기본 검색 결과 수 |
