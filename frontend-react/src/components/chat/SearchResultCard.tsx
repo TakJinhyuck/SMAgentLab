@@ -37,7 +37,7 @@ export function SearchResultCard({ result, defaultOpen = false, index }: SearchR
           {scoreInfo.label} {pct}%
         </span>
       </div>
-      <span className="text-[10px] text-slate-600 flex-shrink-0 hidden sm:inline">click</span>
+      <span className="text-[10px] text-slate-500 flex-shrink-0 hidden sm:inline">click</span>
     </div>
   );
 

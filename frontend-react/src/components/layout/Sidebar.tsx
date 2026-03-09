@@ -17,6 +17,8 @@ import {
   Key,
   Lock,
   Cpu,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useQuery } from '@tanstack/react-query';
@@ -30,6 +32,7 @@ import { changePassword, updateApiKey } from '../../api/auth';
 import { getLLMConfig } from '../../api/llm';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
+import { useThemeStore } from '../../store/useThemeStore';
 import logoSvg from '../../assets/logo.svg';
 
 export function Sidebar() {
@@ -142,7 +145,7 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="w-64 flex-shrink-0 bg-[#1E293B] border-r border-slate-700 flex flex-col h-full">
+    <aside className="w-64 flex-shrink-0 bg-slate-800 border-r border-slate-700 flex flex-col h-full">
       {/* Logo */}
       <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -205,7 +208,7 @@ export function Sidebar() {
         <div className="px-4 py-1.5 border-b border-slate-700 flex items-center gap-1.5">
           <Cpu className="w-3 h-3 text-slate-500 flex-shrink-0" />
           <span className="text-[11px] text-slate-500 truncate" title={currentModel}>
-            <span className="text-slate-600">LLM Model :</span> {currentModel}
+            <span className="text-slate-500">LLM Model :</span> {currentModel}
           </span>
         </div>
       )}
@@ -305,7 +308,7 @@ export function Sidebar() {
               <div className="px-4 pb-3 space-y-3 bg-slate-900/50">
                 <div>
                   <div className="flex justify-between text-xs text-slate-400 mb-1">
-                    <span>벡터 가중치</span>
+                    <span>의미 중심</span>
                     <span className="text-indigo-400 font-mono">{searchConfig.wVector.toFixed(1)}</span>
                   </div>
                   <input
@@ -323,7 +326,7 @@ export function Sidebar() {
                 </div>
                 <div>
                   <div className="flex justify-between text-xs text-slate-400 mb-1">
-                    <span>키워드 가중치</span>
+                    <span>키워드 중심</span>
                     <span className="text-indigo-400 font-mono">{searchConfig.wKeyword.toFixed(1)}</span>
                   </div>
                   <input
@@ -363,9 +366,32 @@ export function Sidebar() {
       {/* If admin page, show nothing extra */}
       {!isChatPage && <div className="flex-1" />}
 
+      {/* Theme toggle */}
+      <ThemeToggle />
+
       {/* User info + Logout */}
       <UserSection />
     </aside>
+  );
+}
+
+function ThemeToggle() {
+  const { theme, toggleTheme } = useThemeStore();
+  return (
+    <div className="border-t border-slate-700/50 px-3 py-2">
+      <button
+        onClick={toggleTheme}
+        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 transition-colors"
+        title={theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환'}
+      >
+        {theme === 'dark' ? (
+          <Sun className="w-3.5 h-3.5" />
+        ) : (
+          <Moon className="w-3.5 h-3.5" />
+        )}
+        {theme === 'dark' ? '라이트 모드' : '다크 모드'}
+      </button>
+    </div>
   );
 }
 
@@ -593,7 +619,7 @@ function AccountSettingsModal({ isOpen, onClose, user, onUserUpdate }: AccountSe
                 {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
             </div>
-            <p className="text-[10px] text-slate-600">사내 LLM 사용 시 필요한 API Key를 등록합니다. 암호화되어 저장됩니다.</p>
+            <p className="text-[10px] text-slate-500">사내 LLM 사용 시 필요한 API Key를 등록합니다. 암호화되어 저장됩니다.</p>
             {keyMsg && (
               <p className={clsx('text-xs px-2', keyMsg.type === 'ok' ? 'text-emerald-400' : 'text-rose-400')}>
                 {keyMsg.text}

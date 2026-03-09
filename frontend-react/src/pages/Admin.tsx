@@ -41,7 +41,7 @@ export default function Admin() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Tab bar */}
-      <div className="flex-shrink-0 border-b border-slate-700 bg-[#1E293B] px-6">
+      <div className="flex-shrink-0 border-b border-slate-700 bg-slate-800 px-6">
         <div className="flex gap-1 overflow-x-auto">
           {visibleTabs.map((tab) => (
             <button

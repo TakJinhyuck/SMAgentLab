@@ -74,7 +74,7 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0F172A] flex items-center justify-center px-4">
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="flex items-center justify-center gap-3 mb-8">
@@ -84,7 +84,7 @@ export default function Register() {
           <span className="text-2xl font-bold text-slate-100">Ops-Navigator</span>
         </div>
 
-        <div className="bg-[#1E293B] rounded-2xl p-8 border border-slate-700">
+        <div className="bg-slate-800 rounded-2xl p-8 border border-slate-700">
           <h2 className="text-xl font-semibold text-slate-100 mb-6 text-center">회원가입</h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -146,7 +146,7 @@ export default function Register() {
 
             <div>
               <label className="block text-sm font-medium text-slate-400 mb-1.5">
-                LLM API Key <span className="text-slate-600">(선택)</span>
+                LLM API Key <span className="text-slate-500">(선택)</span>
               </label>
               <input
                 type="password"
@@ -155,7 +155,7 @@ export default function Register() {
                 className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2.5 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
                 placeholder="사내 LLM API Key"
               />
-              <p className="text-xs text-slate-600 mt-1">사내 LLM 사용 시에만 입력</p>
+              <p className="text-xs text-slate-500 mt-1">사내 LLM 사용 시에만 입력</p>
             </div>
 
             {error && (

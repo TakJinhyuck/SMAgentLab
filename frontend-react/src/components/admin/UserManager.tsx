@@ -96,7 +96,7 @@ function PartSection() {
   return (
     <div>
       <h3 className="text-lg font-semibold text-slate-100 mb-4">파트 (부서) 관리</h3>
-      <div className="bg-[#1E293B] rounded-xl border border-slate-700 p-4">
+      <div className="bg-slate-800 rounded-xl border border-slate-700 p-4">
         <div className="flex gap-2 mb-4">
           <input
             value={newName}
@@ -202,7 +202,7 @@ function UserSection() {
       <h3 className="text-lg font-semibold text-slate-100 mb-4">
         사용자 목록 <span className="text-sm text-slate-500 font-normal">({users.length}명)</span>
       </h3>
-      <div className="bg-[#1E293B] rounded-xl border border-slate-700 overflow-hidden">
+      <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-700 text-slate-400">

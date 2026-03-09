@@ -11,7 +11,7 @@ export function SearchConfigPanel() {
       {/* Vector weight */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
-          <label className="text-xs text-slate-400">벡터 가중치 (w_vector)</label>
+          <label className="text-xs text-slate-400">의미 중심 (문맥 유사도)</label>
           <span className="text-xs font-mono text-indigo-400">{searchConfig.wVector.toFixed(1)}</span>
         </div>
         <input
@@ -26,7 +26,7 @@ export function SearchConfigPanel() {
           }}
           className="w-full h-1.5 rounded-full accent-indigo-500 cursor-pointer"
         />
-        <div className="flex justify-between text-xs text-slate-600 mt-0.5">
+        <div className="flex justify-between text-xs text-slate-500 mt-0.5">
           <span>0.0</span>
           <span>1.0</span>
         </div>
@@ -35,7 +35,7 @@ export function SearchConfigPanel() {
       {/* Keyword weight */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
-          <label className="text-xs text-slate-400">키워드 가중치 (w_keyword)</label>
+          <label className="text-xs text-slate-400">키워드 중심 (단어 일치)</label>
           <span className="text-xs font-mono text-indigo-400">{searchConfig.wKeyword.toFixed(1)}</span>
         </div>
         <input
@@ -50,7 +50,7 @@ export function SearchConfigPanel() {
           }}
           className="w-full h-1.5 rounded-full accent-indigo-500 cursor-pointer"
         />
-        <div className="flex justify-between text-xs text-slate-600 mt-0.5">
+        <div className="flex justify-between text-xs text-slate-500 mt-0.5">
           <span>0.0</span>
           <span>1.0</span>
         </div>
@@ -59,7 +59,7 @@ export function SearchConfigPanel() {
       {/* Top-K */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
-          <label className="text-xs text-slate-400">검색 결과 수 (top_k)</label>
+          <label className="text-xs text-slate-400">검색 결과 수</label>
           <span className="text-xs font-mono text-indigo-400">{searchConfig.topK}</span>
         </div>
         <input
@@ -71,7 +71,7 @@ export function SearchConfigPanel() {
           onChange={(e) => setSearchConfig({ topK: parseInt(e.target.value, 10) })}
           className="w-full h-1.5 rounded-full accent-indigo-500 cursor-pointer"
         />
-        <div className="flex justify-between text-xs text-slate-600 mt-0.5">
+        <div className="flex justify-between text-xs text-slate-500 mt-0.5">
           <span>1</span>
           <span>10</span>
         </div>

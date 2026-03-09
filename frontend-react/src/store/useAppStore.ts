@@ -28,7 +28,7 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => (state.conversationId === conversationId ? state : { conversationId })),
   conversations: [],
   setConversations: (conversations) => set({ conversations }),
-  searchConfig: { wVector: 0.7, wKeyword: 0.3, topK: 5 },
+  searchConfig: { wVector: 0.7, wKeyword: 0.3, topK: 3 },
   setSearchConfig: (cfg) =>
     set((state) => ({ searchConfig: { ...state.searchConfig, ...cfg } })),
   chatRefreshKey: 0,

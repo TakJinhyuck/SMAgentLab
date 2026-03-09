@@ -1,7 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import {
-  Search, AlertCircle, ChevronDown, ChevronUp,
+  Search, AlertCircle, Eye,
   Layers, Database, BookOpen, Zap, MessageSquare, Brain, Target,
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
@@ -9,6 +12,7 @@ import { debugSearch } from '../../api/chat';
 import { getNamespaces } from '../../api/namespaces';
 import { getSearchThresholds } from '../../api/llm';
 import { Button } from '../ui/Button';
+import { Modal } from '../ui/Modal';
 import { CodeBlock } from '../ui/CodeBlock';
 import { Badge } from '../ui/Badge';
 import type { DebugSearchResponse } from '../../types';
@@ -118,7 +122,7 @@ function PipelineFlow({
                   transition-all duration-300 group hover:scale-125 hover:shadow-lg
                   ${isActive
                     ? `bg-slate-800 border border-slate-600 ${step.color} shadow-sm hover:brightness-125`
-                    : 'bg-slate-800/40 border border-slate-700/40 text-slate-600 hover:text-slate-400 hover:border-slate-600'
+                    : 'bg-slate-800/40 border border-slate-700/40 text-slate-500 hover:text-slate-400 hover:border-slate-600'
                   }
                   ${isCurrent ? 'ring-2 ring-offset-2 ring-offset-slate-900 ring-indigo-500/50 scale-110' : ''}
                   ${canNavigate ? 'cursor-pointer' : 'cursor-default'}
@@ -131,7 +135,7 @@ function PipelineFlow({
               {/* Label below icon */}
               <p
                 className={`mt-1 text-[10px] leading-tight text-center transition-colors duration-500 ${
-                  isActive ? 'text-slate-300' : 'text-slate-600'
+                  isActive ? 'text-slate-300' : 'text-slate-500'
                 }`}
                 style={{ transitionDelay: isActive ? `${i * 150}ms` : '0ms' }}
               >
@@ -142,6 +146,63 @@ function PipelineFlow({
         })}
       </div>
     </div>
+  );
+}
+
+function ContextPreviewModal({
+  isOpen,
+  onClose,
+  content,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  content: string;
+}) {
+  const leftRef = useRef<HTMLDivElement>(null);
+  const rightRef = useRef<HTMLDivElement>(null);
+  const syncing = useRef(false);
+
+  const handleScroll = useCallback((source: 'left' | 'right') => {
+    if (syncing.current) return;
+    syncing.current = true;
+    const from = source === 'left' ? leftRef.current : rightRef.current;
+    const to = source === 'left' ? rightRef.current : leftRef.current;
+    if (from && to) {
+      const ratio = from.scrollTop / (from.scrollHeight - from.clientHeight || 1);
+      to.scrollTop = ratio * (to.scrollHeight - to.clientHeight);
+    }
+    requestAnimationFrame(() => { syncing.current = false; });
+  }, []);
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="LLM 컨텍스트 미리보기" maxWidth="max-w-7xl">
+      <div className="grid grid-cols-2 gap-4 h-[70vh]">
+        <div className="flex flex-col min-h-0">
+          <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Raw Text</h4>
+          <div
+            ref={leftRef}
+            onScroll={() => handleScroll('left')}
+            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-4 overflow-y-auto min-h-0"
+          >
+            <pre className="text-xs text-slate-400 font-mono whitespace-pre-wrap leading-relaxed">
+              {content}
+            </pre>
+          </div>
+        </div>
+        <div className="flex flex-col min-h-0">
+          <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Rendered</h4>
+          <div
+            ref={rightRef}
+            onScroll={() => handleScroll('right')}
+            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-4 overflow-y-auto min-h-0 prose prose-invert prose-sm max-w-none prose-pre:bg-slate-800 prose-pre:border prose-pre:border-slate-700 prose-code:text-indigo-300 prose-th:text-slate-300 prose-td:text-slate-400"
+          >
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+              {content}
+            </ReactMarkdown>
+          </div>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -264,7 +325,7 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">결과 수 (top_k)</label>
+              <label className="block text-xs font-medium text-slate-400 mb-1.5">검색 결과 수</label>
               <input
                 type="number"
                 min={1}
@@ -293,7 +354,7 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <div className="flex justify-between text-xs text-slate-400 mb-1.5">
-                <span>벡터 가중치 (w_vector)</span>
+                <span>의미 중심 (문맥 유사도)</span>
                 <span className="font-mono text-indigo-400">{wVector.toFixed(2)}</span>
               </div>
               <input
@@ -304,7 +365,7 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
             </div>
             <div>
               <div className="flex justify-between text-xs text-slate-400 mb-1.5">
-                <span>키워드 가중치 (w_keyword)</span>
+                <span>키워드 중심 (단어 일치)</span>
                 <span className="font-mono text-indigo-400">{wKeyword.toFixed(2)}</span>
               </div>
               <input
@@ -368,7 +429,7 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
               ) : (
                 <div className="bg-slate-700/30 rounded-lg px-3 py-2 space-y-1">
                   <p className="text-xs text-slate-500">용어 매핑 없음 (유사도 {gMin.toFixed(2)} 미만)</p>
-                  <p className="text-[10px] text-slate-600">용어집에 관련 용어를 추가하면 검색 정확도가 높아집니다.</p>
+                  <p className="text-[10px] text-slate-500">용어집에 관련 용어를 추가하면 검색 정확도가 높아집니다.</p>
                 </div>
               )}
             </div>
@@ -396,7 +457,7 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
                             {fs.similarity.toFixed(4)}
                           </span>
                         </div>
-                        <p className={`text-xs line-clamp-2 ${passed ? 'text-slate-500' : 'text-slate-600'}`}>{fs.answer}</p>
+                        <p className={`text-xs line-clamp-2 ${passed ? 'text-slate-500' : 'text-slate-500'}`}>{fs.answer}</p>
                         {!passed && (
                           <p className="text-[10px] text-rose-400/70">유사도 {fs.similarity.toFixed(4)} &lt; 기준 {fsMin.toFixed(2)} → 컨텍스트 미포함</p>
                         )}
@@ -407,7 +468,7 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
               ) : (
                 <div className="bg-slate-700/30 rounded-lg px-3 py-2 space-y-1">
                   <p className="text-xs text-slate-500">등록된 Few-shot 없음</p>
-                  <p className="text-[10px] text-slate-600">Few-shot 탭에서 양질의 Q&A 예시를 등록하면 답변 품질이 향상됩니다.</p>
+                  <p className="text-[10px] text-slate-500">Few-shot 탭에서 양질의 Q&A 예시를 등록하면 답변 품질이 향상됩니다.</p>
                 </div>
               )}
             </div>
@@ -420,7 +481,7 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
                     검색 결과 ({result.results.length}건)
                   </h3>
                   <span className="text-xs text-slate-500">
-                    w_vec={result.w_vector.toFixed(2)} · w_kw={result.w_keyword.toFixed(2)} · top_k={topK}
+                    의미={result.w_vector.toFixed(2)} · 키워드={result.w_keyword.toFixed(2)} · 결과 수={topK}
                   </span>
                 </div>
                 <p className="text-[10px] text-slate-500 mt-1">
@@ -461,11 +522,11 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
 
                   <div className="space-y-2">
                     {[
-                      { label: '벡터 점수 (v_score)', value: r.v_score, color: 'bg-emerald-500', textColor: 'text-emerald-400' },
-                      { label: '키워드 점수 (k_score)', value: r.k_score, color: 'bg-yellow-500', textColor: 'text-yellow-400' },
+                      { label: '의미 유사도 점수', value: r.v_score, color: 'bg-emerald-500', textColor: 'text-emerald-400' },
+                      { label: '키워드 일치 점수', value: r.k_score, color: 'bg-yellow-500', textColor: 'text-yellow-400' },
                     ].map(({ label, value, color, textColor }) => (
                       <div key={label}>
-                        <div className="flex justify-between text-xs text-slate-500 mb-1">
+                        <div className="flex justify-between text-xs text-slate-400 mb-1">
                           <span>{label}</span>
                           <span className={`font-mono ${textColor}`}>{value.toFixed(4)}</span>
                         </div>
@@ -474,10 +535,22 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
                         </div>
                       </div>
                     ))}
-                    <div className="flex justify-between text-xs text-slate-500">
-                      <span>기본 가중치 (base_weight)</span>
-                      <span className="font-mono text-slate-300">{r.base_weight}</span>
+                    <div className="flex items-center justify-between text-xs text-slate-400">
+                      <div className="flex items-center gap-1.5">
+                        <span>문서 우선순위</span>
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                          r.base_weight >= 2 ? 'bg-emerald-500/20 text-emerald-300' :
+                          r.base_weight >= 1.5 ? 'bg-indigo-500/20 text-indigo-300' :
+                          'bg-slate-600/40 text-slate-300'
+                        }`}>
+                          {r.base_weight >= 2 ? '높음' : r.base_weight >= 1.5 ? '보통' : '기본'}
+                        </span>
+                      </div>
+                      <span className="font-mono text-slate-200">{r.base_weight}</span>
                     </div>
+                    <p className="text-[11px] text-slate-400">
+                      1.0=기본 · 1.5+=보통(검색 시 우선 노출) · 2.0+=높음(핵심 문서) · 피드백 시 자동 상승
+                    </p>
                   </div>
 
                   <div>
@@ -495,25 +568,23 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
               ))}
             </div>
 
-            {/* Context preview */}
+            {/* Context preview modal trigger */}
             {result.context_preview && (
-              <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-                <button
-                  onClick={() => setShowContext((v) => !v)}
-                  className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-300 hover:bg-slate-700/50 transition-colors"
-                >
-                  <span>LLM 컨텍스트 미리보기</span>
-                  {showContext ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </button>
-                {showContext && (
-                  <div className="border-t border-slate-700 px-4 py-3">
-                    <pre className="text-xs text-slate-400 font-mono whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto">
-                      {result.context_preview}
-                    </pre>
-                  </div>
-                )}
-              </div>
+              <button
+                onClick={() => setShowContext(true)}
+                className="w-full flex items-center justify-center gap-2 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm font-semibold text-slate-300 hover:bg-slate-700/50 hover:border-indigo-500/50 transition-colors"
+              >
+                <Eye className="w-4 h-4 text-indigo-400" />
+                LLM 컨텍스트 미리보기
+              </button>
             )}
+
+            {/* Context preview modal */}
+            <ContextPreviewModal
+              isOpen={showContext}
+              onClose={() => setShowContext(false)}
+              content={result?.context_preview ?? ''}
+            />
           </div>
         )}
       </div>

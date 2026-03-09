@@ -169,7 +169,7 @@ export function FewshotTable() {
                   {item.created_by_part && (
                     <Badge color={canModifyNs ? 'emerald' : 'slate'}>{item.created_by_part}</Badge>
                   )}
-                  <span className="text-xs text-slate-600">
+                  <span className="text-xs text-slate-500">
                     {new Date(item.created_at).toLocaleDateString('ko-KR')}
                   </span>
                   {expandedId === item.id ? (
@@ -253,7 +253,7 @@ export function FewshotTable() {
           ))}
           {items.length === 0 && (
             <div className="text-center py-10 text-slate-500">
-              <Zap className="w-8 h-8 mx-auto mb-2 text-slate-600" />
+              <Zap className="w-8 h-8 mx-auto mb-2 text-slate-500" />
               <p>Few-shot 항목이 없습니다.</p>
               <p className="text-xs mt-1">챗에서 👍 긍정 피드백을 하면 자동으로 등록됩니다.</p>
             </div>

@@ -372,7 +372,7 @@ export function ChatContainer() {
               <p className="text-4xl mb-4">⚡</p>
               <p className="text-lg font-medium text-slate-400">Ops-Navigator</p>
               <p className="text-sm mt-2 text-slate-500">운영 관련 질문을 입력하세요</p>
-              <p className="text-xs mt-1 text-slate-600">Ctrl+Enter로 전송</p>
+              <p className="text-xs mt-1 text-slate-500">Ctrl+Enter로 전송</p>
             </div>
           </div>
         )}
@@ -390,7 +390,7 @@ export function ChatContainer() {
       </div>
 
       {/* Input area */}
-      <div className="border-t border-slate-700 p-4 bg-[#1E293B]">
+      <div className="border-t border-slate-700 p-4 bg-slate-800">
         <div className="flex gap-3 items-end">
           <textarea
             value={input}

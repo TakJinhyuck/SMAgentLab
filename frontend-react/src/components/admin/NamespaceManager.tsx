@@ -113,7 +113,7 @@ export function NamespaceManager() {
                 {ns.owner_part && (
                   <Badge color={canModifyNs(ns.owner_part) ? 'emerald' : 'slate'}>{ns.owner_part}</Badge>
                 )}
-                <span className="text-xs text-slate-600">
+                <span className="text-xs text-slate-500">
                   생성: {new Date(ns.created_at).toLocaleDateString('ko-KR')}
                 </span>
               </div>

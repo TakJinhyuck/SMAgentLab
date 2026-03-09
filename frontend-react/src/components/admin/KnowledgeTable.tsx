@@ -189,10 +189,22 @@ export function KnowledgeTable() {
                     {(item.target_tables ?? []).length > 3 && (
                       <Badge color="slate">+{(item.target_tables ?? []).length - 3}</Badge>
                     )}
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                      item.base_weight >= 2 ? 'bg-emerald-500/20 text-emerald-300' :
+                      item.base_weight >= 1.5 ? 'bg-indigo-500/20 text-indigo-300' :
+                      'bg-slate-600/40 text-slate-300'
+                    }`}>
+                      우선순위: {item.base_weight >= 2 ? '높음' : item.base_weight >= 1.5 ? '보통' : '기본'} ({item.base_weight})
+                    </span>
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5 truncate">{item.content.slice(0, 100)}...</p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className="text-[10px] text-slate-500">
+                    {item.updated_at !== item.created_at
+                      ? new Date(item.updated_at).toISOString().slice(0, 10)
+                      : new Date(item.created_at).toISOString().slice(0, 10)}
+                  </span>
                   {item.created_by_username && (
                     <span className="text-xs text-slate-500">{item.created_by_username}</span>
                   )}
@@ -252,13 +264,20 @@ export function KnowledgeTable() {
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-slate-400 mb-1">
-                          기본 가중치: <span className="text-indigo-400">{editForm.base_weight.toFixed(1)}</span>
+                          문서 우선순위: <span className={`font-medium ${
+                            editForm.base_weight >= 2 ? 'text-emerald-400' :
+                            editForm.base_weight >= 1.5 ? 'text-indigo-400' :
+                            'text-slate-300'
+                          }`}>{editForm.base_weight.toFixed(1)} — {editForm.base_weight >= 2 ? '높음' : editForm.base_weight >= 1.5 ? '보통' : '기본'}</span>
                         </label>
                         <input
                           type="range" min={0} max={3} step={0.1} value={editForm.base_weight}
                           onChange={(e) => setEditForm((f) => ({ ...f, base_weight: parseFloat(e.target.value) }))}
                           className="w-full accent-indigo-500"
                         />
+                        <p className="text-[11px] text-slate-400 mt-1">
+                          1.0=기본 · 1.5+=보통(검색 시 우선 노출) · 2.0+=높음(핵심 문서, 항상 상위 노출) · 피드백 시 자동 상승
+                        </p>
                       </div>
                       {updateMutation.error && (
                         <p className="text-xs text-rose-400">{String(updateMutation.error)}</p>
@@ -297,7 +316,16 @@ export function KnowledgeTable() {
                         </div>
                       )}
                       <div className="flex items-center justify-between text-xs text-slate-500">
-                        <span>기본 가중치: {item.base_weight}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span>문서 우선순위:</span>
+                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            item.base_weight >= 2 ? 'bg-emerald-500/20 text-emerald-300' :
+                            item.base_weight >= 1.5 ? 'bg-indigo-500/20 text-indigo-300' :
+                            'bg-slate-600/40 text-slate-300'
+                          }`}>
+                            {item.base_weight >= 2 ? '높음' : item.base_weight >= 1.5 ? '보통' : '기본'} ({item.base_weight})
+                          </span>
+                        </div>
                         <span>수정: {new Date(item.updated_at).toLocaleDateString('ko-KR')}</span>
                       </div>
                     </div>
@@ -359,13 +387,20 @@ export function KnowledgeTable() {
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1">
-              기본 가중치: <span className="text-indigo-400">{createForm.base_weight.toFixed(1)}</span>
+              문서 우선순위: <span className={`font-medium ${
+                createForm.base_weight >= 2 ? 'text-emerald-400' :
+                createForm.base_weight >= 1.5 ? 'text-indigo-400' :
+                'text-slate-300'
+              }`}>{createForm.base_weight.toFixed(1)} — {createForm.base_weight >= 2 ? '높음' : createForm.base_weight >= 1.5 ? '보통' : '기본'}</span>
             </label>
             <input
               type="range" min={0} max={3} step={0.1} value={createForm.base_weight}
               onChange={(e) => setCreateForm((f) => ({ ...f, base_weight: parseFloat(e.target.value) }))}
               className="w-full accent-indigo-500"
             />
+            <p className="text-[11px] text-slate-400 mt-1">
+              1.0=기본 · 1.5+=보통(검색 시 우선 노출) · 2.0+=높음(핵심 문서, 항상 상위 노출) · 피드백 시 자동 상승
+            </p>
           </div>
           <div className="flex gap-2 justify-end pt-2">
             <Button variant="secondary" size="sm" onClick={() => setShowCreate(false)}>취소</Button>

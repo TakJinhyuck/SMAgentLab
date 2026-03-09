@@ -30,7 +30,7 @@ function DonutChart({ segments, size = 140, strokeWidth = 22, centerTop, centerB
     <div className="relative">
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         {total === 0 ? (
-          <circle cx={cx} cy={cy} r={r} fill="none" stroke="#334155" strokeWidth={strokeWidth} />
+          <circle cx={cx} cy={cy} r={r} fill="none" style={{ stroke: 'rgb(var(--slate-700))' }} strokeWidth={strokeWidth} />
         ) : (
           segments.map((seg, i) => {
             if (seg.value === 0) return null;
@@ -53,11 +53,11 @@ function DonutChart({ segments, size = 140, strokeWidth = 22, centerTop, centerB
         )}
         {centerTop && (
           <text x={cx} y={cy - 7} textAnchor="middle" dominantBaseline="middle"
-            fill="#e2e8f0" fontSize="22" fontWeight="700" fontFamily="system-ui">{centerTop}</text>
+            style={{ fill: 'rgb(var(--slate-200))' }} fontSize="22" fontWeight="700" fontFamily="system-ui">{centerTop}</text>
         )}
         {centerBottom && (
           <text x={cx} y={cy + 13} textAnchor="middle" dominantBaseline="middle"
-            fill="#94a3b8" fontSize="11" fontFamily="system-ui">{centerBottom}</text>
+            style={{ fill: 'rgb(var(--slate-400))' }} fontSize="11" fontFamily="system-ui">{centerBottom}</text>
         )}
       </svg>
       {hoverIdx !== null && segments[hoverIdx] && (

@@ -42,7 +42,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0F172A] flex items-center justify-center px-4">
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="flex items-center justify-center gap-3 mb-8">
@@ -52,7 +52,7 @@ export default function Login() {
           <span className="text-2xl font-bold text-slate-100">Ops-Navigator</span>
         </div>
 
-        <div className="bg-[#1E293B] rounded-2xl p-8 border border-slate-700">
+        <div className="bg-slate-800 rounded-2xl p-8 border border-slate-700">
           <h2 className="text-xl font-semibold text-slate-100 mb-6 text-center">로그인</h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">

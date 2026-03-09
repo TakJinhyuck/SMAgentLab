@@ -90,6 +90,20 @@ docker compose up --build -d
   - 직전 user 질문 + assistant 답변(각 80자)을 현재 질문에 결합하여 임베딩/검색
   - 후속 짧은 질문에서도 이전 대화 맥락이 검색에 반영되어 유사도 향상
   - 추가 비용: DB SELECT 1회 (< 1ms), LLM 호출 없음
+- [x] **UX 용어 개선 및 시각화 강화**
+  - 벡터 가중치/키워드 가중치 → 의미 중심(문맥 유사도)/키워드 중심(단어 일치)
+  - base_weight → 문서 우선순위 (높음/보통/기본 배지 + 색상 시각화 + 기준 설명)
+  - 기본 topK 5 → 3으로 변경
+  - LLM 컨텍스트 미리보기: 토글 → 모달(좌: raw text, 우: Markdown 렌더링, 스크롤 동기화)
+  - 지식 베이스 카드 헤더에 우선순위 배지 + 최종 변경일(YYYY-MM-DD) 표시
+  - 전반적 색상 대비 개선 (text-slate-600 → text-slate-500)
+- [x] **다크/라이트 테마 전환**
+  - CSS 변수 기반 Tailwind slate 팔레트 재정의 (tailwind.config.js)
+  - `[data-theme="light"]` 시 slate 스케일 반전 + accent 색상 56개 오버라이드
+  - 사이드바 하단 Sun/Moon 토글 아이콘 (localStorage 저장)
+  - 하드코딩 hex(`bg-[#0F172A]`, `bg-[#1E293B]`) → slate 클래스로 전환 (6개 파일)
+  - SVG 도넛 차트 fill 하드코딩 → CSS 변수 적용
+  - prose-chat 마크다운 스타일 CSS 변수화
 
 ### 진행 중 / 미완료 작업
 

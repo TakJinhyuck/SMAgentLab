@@ -300,7 +300,7 @@ function ProviderSettings() {
                 </button>
               ))}
             </div>
-            <p className="text-xs text-slate-600 mt-1.5">inputs.model 파라미터로 전달됩니다. 미선택 시 Agent 기본 모델 사용.</p>
+            <p className="text-xs text-slate-500 mt-1.5">inputs.model 파라미터로 전달됩니다. 미선택 시 Agent 기본 모델 사용.</p>
           </div>
         )}
 
@@ -318,7 +318,7 @@ function ProviderSettings() {
                 placeholder="https://devx-mcp-api.shinsegae-inc.com/api/v1/mcp-command/chat"
                 className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
               />
-              <p className="text-xs text-slate-600 mt-0.5">DevX MCP API 엔드포인트 (전체 URL)</p>
+              <p className="text-xs text-slate-500 mt-0.5">DevX MCP API 엔드포인트 (전체 URL)</p>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Agent Code <span className="text-rose-400">*</span></label>
@@ -347,7 +347,7 @@ function ProviderSettings() {
                   </button>
                 ))}
               </div>
-              <p className="text-xs text-slate-600 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5">
                 {form.inhouse_llm_response_mode === 'streaming'
                   ? 'SSE 스트리밍 — 토큰 단위로 실시간 표시'
                   : 'Blocking — 전체 응답을 한번에 수신'}
@@ -363,7 +363,7 @@ function ProviderSettings() {
                 <KeyRound className="w-3.5 h-3.5 flex-shrink-0" />
                 {user?.has_api_key ? '••••••••••••••••  (등록됨)' : '미등록 — 프로필에서 API Key를 등록해주세요'}
               </div>
-              <p className="text-xs text-slate-600 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5">
                 API Key는 프로필 설정에서 등록/변경할 수 있습니다. 각 사용자별로 개별 관리됩니다.
               </p>
             </div>
@@ -377,7 +377,7 @@ function ProviderSettings() {
                 onChange={(e) => handleChange('inhouse_llm_timeout', parseInt(e.target.value))}
                 className="w-full accent-indigo-500"
               />
-              <div className="flex justify-between text-xs text-slate-600 mt-0.5">
+              <div className="flex justify-between text-xs text-slate-500 mt-0.5">
                 <span>10s</span><span>10분</span>
               </div>
             </div>
@@ -417,7 +417,7 @@ function ProviderSettings() {
                 onChange={(e) => handleChange('ollama_timeout', parseInt(e.target.value))}
                 className="w-full accent-indigo-500"
               />
-              <div className="flex justify-between text-xs text-slate-600 mt-0.5">
+              <div className="flex justify-between text-xs text-slate-500 mt-0.5">
                 <span>30s</span><span>30분</span>
               </div>
             </div>
@@ -556,7 +556,7 @@ function ThresholdSettings() {
               onChange={(e) => handleChange(key, parseFloat(e.target.value))}
               className="w-full accent-indigo-500"
             />
-            <p className="text-[10px] text-slate-600 mt-0.5">{desc}</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">{desc}</p>
           </div>
         ))}
       </div>

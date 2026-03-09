@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Sidebar } from './components/layout/Sidebar';
 import { useAppStore } from './store/useAppStore';
 import { useAuthStore } from './store/useAuthStore';
+import { useThemeStore } from './store/useThemeStore';
 import Chat from './pages/Chat';
 import Admin from './pages/Admin';
 import Login from './pages/Login';
@@ -20,6 +21,14 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 // Chat은 항상 mount 유지 (스트리밍 중 화면 이동해도 끊기지 않도록)
+function ThemeSync() {
+  const theme = useThemeStore((s) => s.theme);
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+  return null;
+}
+
 function AppContent() {
   const location = useLocation();
   const isAdmin = location.pathname.startsWith('/admin');
@@ -36,7 +45,7 @@ function AppContent() {
   }, [isAdmin, bumpChatRefresh]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#0F172A]">
+    <div className="flex h-screen overflow-hidden bg-slate-900">
       <Sidebar />
       <main className="flex-1 overflow-hidden">
         <div className={isAdmin ? 'hidden' : 'h-full'}>
@@ -51,6 +60,7 @@ function AppContent() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <ThemeSync />
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
