@@ -30,6 +30,27 @@ def set_thresholds(updates: dict[str, float]) -> dict[str, float]:
     return get_thresholds()
 
 
+# ── Runtime search defaults overrides ────────────────────────────────────────
+_runtime_search_defaults: dict[str, float] = {}
+
+_SEARCH_DEFAULT_KEYS = ("default_top_k", "default_w_vector", "default_w_keyword")
+
+
+def get_search_defaults() -> dict[str, float]:
+    return {
+        "default_top_k": _runtime_search_defaults.get("default_top_k", settings.default_top_k),
+        "default_w_vector": _runtime_search_defaults.get("default_w_vector", settings.default_w_vector),
+        "default_w_keyword": _runtime_search_defaults.get("default_w_keyword", settings.default_w_keyword),
+    }
+
+
+def set_search_defaults(updates: dict[str, float]) -> dict[str, float]:
+    for k, v in updates.items():
+        if k in _SEARCH_DEFAULT_KEYS:
+            _runtime_search_defaults[k] = v
+    return get_search_defaults()
+
+
 @dataclass
 class GlossaryMatch:
     term: str

@@ -75,3 +75,22 @@ export async function updateSearchThresholds(payload: Partial<SearchThresholds>)
     body: JSON.stringify(payload),
   });
 }
+
+// ── 검색 기본값 설정 ──
+
+export interface SearchDefaults {
+  default_top_k: number;
+  default_w_vector: number;
+  default_w_keyword: number;
+}
+
+export async function getSearchDefaults(): Promise<SearchDefaults> {
+  return await apiFetch<SearchDefaults>('/llm/search-defaults');
+}
+
+export async function updateSearchDefaults(payload: Partial<SearchDefaults>): Promise<SearchDefaults> {
+  return await apiFetch<SearchDefaults>('/llm/search-defaults', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}

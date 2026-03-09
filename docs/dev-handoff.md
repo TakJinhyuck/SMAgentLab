@@ -35,6 +35,7 @@ docker compose up --build -d
 > **마지막 업데이트**: 2026-03-09
 > **작업 PC**: PC-B (Windows 11)
 > **브랜치**: main
+> **최근 변경**: 검색 설정값 중앙화 (config.py 기반)
 
 ### 완료된 작업
 
@@ -104,6 +105,14 @@ docker compose up --build -d
   - 하드코딩 hex(`bg-[#0F172A]`, `bg-[#1E293B]`) → slate 클래스로 전환 (6개 파일)
   - SVG 도넛 차트 fill 하드코딩 → CSS 변수 적용
   - prose-chat 마크다운 스타일 CSS 변수화
+- [x] **검색 설정값 중앙화 (config.py → API → 프론트엔드)**
+  - `config.py`의 `default_top_k`, `default_w_vector`, `default_w_keyword`가 설정의 단일 소스
+  - 백엔드: `retrieval.py`에 런타임 오버라이드 패턴 추가 (`get/set_search_defaults`)
+  - 백엔드: `GET/PUT /api/llm/search-defaults` 엔드포인트 추가
+  - 백엔드: `ChatRequest` 스키마 Field default를 `settings` 참조로 변경 (`default_factory`)
+  - 프론트엔드: `useAppStore` 하드코딩 제거, 앱 초기화 시 API로 기본값 fetch (`SearchConfigSync`)
+  - 프론트엔드: `api/chat.ts` fallback 하드코딩(`?? 0.7`, `?? 5` 등) 제거
+  - 프론트엔드: Admin > 시스템 설정 > 검색 임계값 탭에 검색 기본값 관리 UI 추가
 
 ### 진행 중 / 미완료 작업
 

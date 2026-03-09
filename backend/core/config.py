@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     inhouse_llm_timeout: int = 120
 
     # 검색 기본값
-    default_top_k: int = 5
+    default_top_k: int = 3
     default_w_vector: float = 0.7
     default_w_keyword: float = 0.3
 

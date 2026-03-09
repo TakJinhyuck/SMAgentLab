@@ -2,13 +2,15 @@
 from typing import Optional
 from pydantic import BaseModel, Field
 
+from core.config import settings
+
 
 class ChatRequest(BaseModel):
     namespace: str
     question: str
-    w_vector: float = Field(default=0.7, ge=0.0, le=1.0)
-    w_keyword: float = Field(default=0.3, ge=0.0, le=1.0)
-    top_k: int = Field(default=5, ge=1, le=20)
+    w_vector: float = Field(default_factory=lambda: settings.default_w_vector, ge=0.0, le=1.0)
+    w_keyword: float = Field(default_factory=lambda: settings.default_w_keyword, ge=0.0, le=1.0)
+    top_k: int = Field(default_factory=lambda: settings.default_top_k, ge=1, le=20)
     conversation_id: Optional[int] = None
 
 

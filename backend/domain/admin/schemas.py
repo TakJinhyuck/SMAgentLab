@@ -89,3 +89,9 @@ class ThresholdUpdate(BaseModel):
     knowledge_min_score: Optional[float] = None
     knowledge_high_score: Optional[float] = None
     knowledge_mid_score: Optional[float] = None
+
+
+class SearchDefaultsUpdate(BaseModel):
+    default_top_k: Optional[int] = None
+    default_w_vector: Optional[float] = None
+    default_w_keyword: Optional[float] = None

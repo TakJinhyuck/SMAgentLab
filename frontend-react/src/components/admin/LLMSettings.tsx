@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Cpu, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Save, FlaskConical, SlidersHorizontal, KeyRound } from 'lucide-react';
-import { getLLMConfig, updateLLMConfig, testLLMConnection, getSearchThresholds, updateSearchThresholds } from '../../api/llm';
-import type { LLMConfig, LLMConfigUpdate, SearchThresholds } from '../../api/llm';
+import { getLLMConfig, updateLLMConfig, testLLMConnection, getSearchThresholds, updateSearchThresholds, getSearchDefaults, updateSearchDefaults } from '../../api/llm';
+import type { LLMConfig, LLMConfigUpdate, SearchThresholds, SearchDefaults } from '../../api/llm';
 import { Button } from '../ui/Button';
 import { useAuthStore } from '../../store/useAuthStore';
 
@@ -140,7 +140,13 @@ export function LLMSettings() {
       </div>
 
       {subTab === 'provider' && <ProviderSettings />}
-      {subTab === 'thresholds' && <ThresholdSettings />}
+      {subTab === 'thresholds' && (
+        <>
+          <ThresholdSettings />
+          <div className="mt-8" />
+          <SearchDefaultsSettings />
+        </>
+      )}
     </div>
   );
 }
@@ -570,6 +576,122 @@ function ThresholdSettings() {
       {saveMutation.isSuccess && !dirty && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-lg text-sm border bg-emerald-500/10 border-emerald-500/30 text-emerald-300">
           <CheckCircle2 className="w-4 h-4" /> 임계값이 적용되었습니다
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <Button variant="secondary" size="sm" onClick={handleReset} disabled={!dirty}>
+          초기화
+        </Button>
+        <Button
+          variant="primary" size="sm"
+          onClick={handleSave}
+          loading={saveMutation.isPending}
+          disabled={!dirty}
+        >
+          <Save className="w-4 h-4" /> 저장 및 적용
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+
+// ── 검색 기본값 설정 컴포넌트 ──
+
+const SEARCH_DEFAULT_FIELDS: { key: keyof SearchDefaults; label: string; desc: string; min: number; max: number; step: number; color: string; format: (v: number) => string }[] = [
+  { key: 'default_w_vector', label: '의미 중심 (문맥 유사도) 가중치', desc: '벡터 검색의 가중치입니다. 키워드 가중치와 합이 1이 되도록 설정하세요.', min: 0, max: 1, step: 0.05, color: 'text-indigo-400', format: (v) => v.toFixed(2) },
+  { key: 'default_w_keyword', label: '키워드 중심 (단어 일치) 가중치', desc: 'BM25 키워드 검색의 가중치입니다.', min: 0, max: 1, step: 0.05, color: 'text-amber-400', format: (v) => v.toFixed(2) },
+  { key: 'default_top_k', label: '검색 결과 수 (Top-K)', desc: 'LLM에 전달할 최대 검색 결과 수입니다. (1~20)', min: 1, max: 20, step: 1, color: 'text-emerald-400', format: (v) => String(v) },
+];
+
+function SearchDefaultsSettings() {
+  const qc = useQueryClient();
+  const [values, setValues] = useState<SearchDefaults | null>(null);
+  const [dirty, setDirty] = useState(false);
+
+  const { data: defaults, isLoading } = useQuery({
+    queryKey: ['search-defaults'],
+    queryFn: getSearchDefaults,
+    staleTime: 10_000,
+  });
+
+  useEffect(() => {
+    if (defaults && !values) {
+      setValues(defaults);
+    }
+  }, [defaults, values]);
+
+  const saveMutation = useMutation({
+    mutationFn: (payload: Partial<SearchDefaults>) => updateSearchDefaults(payload),
+    onSuccess: (data: SearchDefaults) => {
+      qc.setQueryData(['search-defaults'], data);
+      setValues(data);
+      setDirty(false);
+    },
+  });
+
+  const handleChange = (key: keyof SearchDefaults, val: number) => {
+    setValues((v) => v ? { ...v, [key]: val } : v);
+    setDirty(true);
+  };
+
+  const handleSave = () => {
+    if (!values) return;
+    saveMutation.mutate(values);
+  };
+
+  const handleReset = () => {
+    if (defaults) {
+      setValues(defaults);
+      setDirty(false);
+    }
+  };
+
+  if (isLoading || !values) {
+    return <div className="text-center py-6 text-slate-500 animate-pulse text-sm">검색 기본값 로딩 중...</div>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-slate-200 flex items-center gap-2">
+          <SlidersHorizontal className="w-5 h-5 text-indigo-400" />
+          검색 기본값 설정
+        </h2>
+        <p className="text-xs text-slate-500 mt-0.5">
+          채팅 검색 시 사용되는 기본 가중치와 결과 수를 설정합니다. 사용자가 개별 조정하지 않으면 이 값이 적용됩니다.
+        </p>
+      </div>
+
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 space-y-5">
+        {SEARCH_DEFAULT_FIELDS.map(({ key, label, desc, min, max, step, color, format }) => (
+          <div key={key}>
+            <div className="flex justify-between text-xs mb-1">
+              <span className="font-medium text-slate-400">{label}</span>
+              <span className={`font-mono ${color}`}>{format(values[key])}</span>
+            </div>
+            <input
+              type="range"
+              min={min} max={max} step={step}
+              value={values[key]}
+              onChange={(e) => handleChange(key, key === 'default_top_k' ? parseInt(e.target.value) : parseFloat(e.target.value))}
+              className="w-full accent-indigo-500"
+            />
+            <p className="text-[10px] text-slate-500 mt-0.5">{desc}</p>
+          </div>
+        ))}
+      </div>
+
+      {saveMutation.isError && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-lg text-sm border bg-rose-500/10 border-rose-500/30 text-rose-300">
+          <XCircle className="w-4 h-4" /> 저장 실패: {String(saveMutation.error)}
+        </div>
+      )}
+
+      {saveMutation.isSuccess && !dirty && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-lg text-sm border bg-emerald-500/10 border-emerald-500/30 text-emerald-300">
+          <CheckCircle2 className="w-4 h-4" /> 검색 기본값이 적용되었습니다
         </div>
       )}
 

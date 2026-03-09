@@ -5,6 +5,7 @@ import { Sidebar } from './components/layout/Sidebar';
 import { useAppStore } from './store/useAppStore';
 import { useAuthStore } from './store/useAuthStore';
 import { useThemeStore } from './store/useThemeStore';
+import { getSearchDefaults } from './api/llm';
 import Chat from './pages/Chat';
 import Admin from './pages/Admin';
 import Login from './pages/Login';
@@ -26,6 +27,25 @@ function ThemeSync() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
+  return null;
+}
+
+function SearchConfigSync() {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const searchConfigLoaded = useAppStore((s) => s.searchConfigLoaded);
+  const initSearchConfig = useAppStore((s) => s.initSearchConfig);
+
+  useEffect(() => {
+    if (!isAuthenticated || searchConfigLoaded) return;
+    getSearchDefaults()
+      .then((d) => initSearchConfig({
+        wVector: d.default_w_vector,
+        wKeyword: d.default_w_keyword,
+        topK: d.default_top_k,
+      }))
+      .catch(() => {/* fallback 유지 */});
+  }, [isAuthenticated, searchConfigLoaded, initSearchConfig]);
+
   return null;
 }
 
@@ -61,6 +81,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeSync />
+      <SearchConfigSync />
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />

@@ -9,13 +9,13 @@ from shared.embedding import embedding_service
 from domain.admin.schemas import (
     NamespaceCreate, NamespaceInfo,
     NamespaceStats, StatsResponse, TermStat, NamespaceDetailStats,
-    LLMConfigUpdate, LLMTestRequest, ThresholdUpdate,
+    LLMConfigUpdate, LLMTestRequest, ThresholdUpdate, SearchDefaultsUpdate,
 )
 from domain.admin import service
 from domain.llm.factory import get_llm_provider, switch_provider, get_runtime_config
 from domain.llm.ollama import OllamaProvider
 from domain.llm.inhouse import InHouseLLMProvider
-from domain.knowledge.retrieval import get_thresholds, set_thresholds
+from domain.knowledge.retrieval import get_thresholds, set_thresholds, get_search_defaults, set_search_defaults
 
 router = APIRouter(tags=["admin"])
 
@@ -297,3 +297,19 @@ async def update_threshold_config(body: ThresholdUpdate, admin: dict = Depends(g
         if not 0.0 <= v <= 1.0:
             raise HTTPException(status_code=400, detail=f"{k}는 0~1 범위여야 합니다.")
     return set_thresholds(updates)
+
+
+@router.get("/api/llm/search-defaults")
+async def get_search_defaults_config(user: dict = Depends(get_current_user)):
+    return get_search_defaults()
+
+
+@router.put("/api/llm/search-defaults")
+async def update_search_defaults_config(body: SearchDefaultsUpdate, admin: dict = Depends(get_current_admin)):
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "default_top_k" in updates and not 1 <= updates["default_top_k"] <= 20:
+        raise HTTPException(status_code=400, detail="default_top_k는 1~20 범위여야 합니다.")
+    for k in ("default_w_vector", "default_w_keyword"):
+        if k in updates and not 0.0 <= updates[k] <= 1.0:
+            raise HTTPException(status_code=400, detail=f"{k}는 0~1 범위여야 합니다.")
+    return set_search_defaults(updates)
