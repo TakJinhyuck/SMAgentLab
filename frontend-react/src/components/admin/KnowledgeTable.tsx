@@ -72,6 +72,7 @@ export function KnowledgeTable() {
     queryFn: () => getKnowledge(selectedNs),
     enabled: !!selectedNs,
     staleTime: 15_000,
+    refetchOnMount: 'always',
   });
 
   const createMutation = useMutation({

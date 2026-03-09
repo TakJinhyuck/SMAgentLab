@@ -1,17 +1,47 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Trash2, Plus, Shield, User as UserIcon } from 'lucide-react';
+import { Trash2, Plus, Shield, User as UserIcon, Users, Building2 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { getUsers, updateUser, deleteUser, getParts, createPart, deletePart } from '../../api/auth';
 import { useAuthStore } from '../../store/useAuthStore';
 import type { User } from '../../types';
 
+type SubTab = 'users' | 'parts';
+
 export function UserManager() {
+  const [subTab, setSubTab] = useState<SubTab>('parts');
+
   return (
-    <div className="space-y-8">
-      <PartSection />
-      <UserSection />
+    <div className="max-w-4xl">
+      {/* Sub-tab bar */}
+      <div className="flex gap-1 mb-6 border-b border-slate-700">
+        <button
+          onClick={() => setSubTab('parts')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+            subTab === 'parts'
+              ? 'text-indigo-400 border-indigo-500'
+              : 'text-slate-400 border-transparent hover:text-slate-200 hover:border-slate-600'
+          }`}
+        >
+          <Building2 className="w-3.5 h-3.5" />
+          파트 관리
+        </button>
+        <button
+          onClick={() => setSubTab('users')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+            subTab === 'users'
+              ? 'text-indigo-400 border-indigo-500'
+              : 'text-slate-400 border-transparent hover:text-slate-200 hover:border-slate-600'
+          }`}
+        >
+          <Users className="w-3.5 h-3.5" />
+          사용자 목록
+        </button>
+      </div>
+
+      {subTab === 'parts' && <PartSection />}
+      {subTab === 'users' && <UserSection />}
     </div>
   );
 }
@@ -91,7 +121,7 @@ function PartSection() {
               <span className="text-sm text-slate-200">{p.name}</span>
               <button
                 onClick={() => handleDelete(p.id)}
-                className="text-slate-500 hover:text-rose-400 transition-colors"
+                className="text-slate-500 hover:text-rose-400 hover:scale-110 active:scale-95 transition-all cursor-pointer"
                 title="파트 삭제"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -201,7 +231,8 @@ function UserSection() {
                   <select
                     value={u.part}
                     onChange={(e) => handleChangePart(u, e.target.value)}
-                    className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                    title="파트를 변경하려면 선택하세요"
+                    className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 cursor-pointer hover:border-slate-400 transition-colors"
                   >
                     {parts.map((p) => (
                       <option key={p.id} value={p.name}>{p.name}</option>
@@ -210,13 +241,25 @@ function UserSection() {
                 </td>
                 <td className="px-4 py-3">
                   {u.id === currentUser?.id ? (
-                    <Badge color="indigo">admin</Badge>
+                    <span
+                      title="현재 로그인한 계정의 역할은 변경할 수 없습니다"
+                      className="inline-block cursor-not-allowed opacity-80 hover:opacity-100 transition-opacity duration-150"
+                    >
+                      <Badge color="indigo">admin</Badge>
+                    </span>
                   ) : (
-                    <button onClick={() => handleToggleRole(u)}>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleToggleRole(u)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleToggleRole(u)}
+                      title={`클릭하여 ${u.role === 'admin' ? '일반 사용자' : '관리자'}로 변경`}
+                      className="inline-block cursor-pointer transform hover:scale-110 active:scale-95 transition-transform duration-150"
+                    >
                       <Badge color={u.role === 'admin' ? 'indigo' : 'slate'}>
                         {u.role}
                       </Badge>
-                    </button>
+                    </span>
                   )}
                 </td>
                 <td className="px-4 py-3">
@@ -226,20 +269,32 @@ function UserSection() {
                 </td>
                 <td className="px-4 py-3">
                   {u.id === currentUser?.id ? (
-                    <Badge color="emerald">활성</Badge>
+                    <span
+                      title="현재 로그인한 계정의 상태는 변경할 수 없습니다"
+                      className="inline-block cursor-not-allowed opacity-80 hover:opacity-100 transition-opacity duration-150"
+                    >
+                      <Badge color="emerald">활성</Badge>
+                    </span>
                   ) : (
-                    <button onClick={() => handleToggleActive(u)}>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleToggleActive(u)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleToggleActive(u)}
+                      title={`클릭하여 ${u.is_active ? '비활성화' : '활성화'}`}
+                      className="inline-block cursor-pointer transform hover:scale-110 active:scale-95 transition-transform duration-150"
+                    >
                       <Badge color={u.is_active ? 'emerald' : 'rose'}>
                         {u.is_active ? '활성' : '비활성'}
                       </Badge>
-                    </button>
+                    </span>
                   )}
                 </td>
                 <td className="px-4 py-3 text-right">
                   {u.id !== currentUser?.id && (
                     <button
                       onClick={() => handleDelete(u)}
-                      className="text-slate-500 hover:text-rose-400 transition-colors p-1"
+                      className="text-slate-500 hover:text-rose-400 hover:scale-110 active:scale-95 transition-all p-1 cursor-pointer"
                       title="사용자 삭제"
                     >
                       <Trash2 className="w-4 h-4" />

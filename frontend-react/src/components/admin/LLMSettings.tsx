@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Cpu, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Save, FlaskConical, SlidersHorizontal, KeyRound } from 'lucide-react';
 import { getLLMConfig, updateLLMConfig, testLLMConnection, getSearchThresholds, updateSearchThresholds } from '../../api/llm';
@@ -16,14 +16,49 @@ interface InhouseModelOption {
   id: InhouseModel;
   label: string;
   desc: string;
-  icon: string;
+  icon: React.ReactNode;
   color: string;
 }
 
+/* ── 각 LLM 프로바이더 로고 SVG ── */
+const OpenAILogo = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855l-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023l-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135l-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681zm1.097-2.365l2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z"/>
+  </svg>
+);
+
+const AnthropicLogo = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 100 100" className={className}>
+    {/* Claude "sunburst" / starburst logo */}
+    {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
+      <ellipse
+        key={angle}
+        cx="50" cy="50" rx="6" ry="30"
+        fill="#E07A5F"
+        transform={`rotate(${angle} 50 50)`}
+      />
+    ))}
+  </svg>
+);
+
+const GeminiLogo = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 100 100" className={className}>
+    {/* Google Gemini 4-color diamond star */}
+    <polygon points="50,2 62,38 50,50" fill="#4285F4" />
+    <polygon points="50,2 38,38 50,50" fill="#EA4335" />
+    <polygon points="50,98 62,62 50,50" fill="#34A853" />
+    <polygon points="50,98 38,62 50,50" fill="#FBBC05" />
+    <polygon points="2,50 38,38 50,50" fill="#EA4335" />
+    <polygon points="2,50 38,62 50,50" fill="#FBBC05" />
+    <polygon points="98,50 62,38 50,50" fill="#4285F4" />
+    <polygon points="98,50 62,62 50,50" fill="#34A853" />
+  </svg>
+);
+
 const INHOUSE_MODELS: InhouseModelOption[] = [
-  { id: 'gpt-5.2', label: 'GPT 5.2', desc: 'OpenAI', icon: '🟢', color: 'border-emerald-500 bg-emerald-500/10 text-emerald-300' },
-  { id: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5', desc: 'Anthropic', icon: '🟠', color: 'border-orange-500 bg-orange-500/10 text-orange-300' },
-  { id: 'gemini-3.0-pro', label: 'Gemini 3.0 Pro', desc: 'Google', icon: '🔵', color: 'border-blue-500 bg-blue-500/10 text-blue-300' },
+  { id: 'gpt-5.2', label: 'GPT 5.2', desc: 'OpenAI', icon: <OpenAILogo className="w-6 h-6" />, color: 'border-emerald-500 bg-emerald-500/10 text-emerald-300' },
+  { id: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5', desc: 'Anthropic', icon: <AnthropicLogo className="w-6 h-6" />, color: 'border-orange-500 bg-orange-500/10 text-orange-300' },
+  { id: 'gemini-3.0-pro', label: 'Gemini 3.0 Pro', desc: 'Google', icon: <GeminiLogo className="w-6 h-6" />, color: 'border-blue-500 bg-blue-500/10 text-blue-300' },
 ];
 
 interface FormState {
@@ -71,7 +106,49 @@ function ConnectionBadge({ ok, checking }: { ok: boolean | null; checking?: bool
   );
 }
 
+type SubTab = 'provider' | 'thresholds';
+
 export function LLMSettings() {
+  const [subTab, setSubTab] = useState<SubTab>('provider');
+
+  return (
+    <div className="max-w-2xl">
+      {/* Sub-tab bar */}
+      <div className="flex gap-1 mb-6 border-b border-slate-700">
+        <button
+          onClick={() => setSubTab('provider')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+            subTab === 'provider'
+              ? 'text-indigo-400 border-indigo-500'
+              : 'text-slate-400 border-transparent hover:text-slate-200 hover:border-slate-600'
+          }`}
+        >
+          <Cpu className="w-3.5 h-3.5" />
+          LLM 프로바이더
+        </button>
+        <button
+          onClick={() => setSubTab('thresholds')}
+          className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+            subTab === 'thresholds'
+              ? 'text-indigo-400 border-indigo-500'
+              : 'text-slate-400 border-transparent hover:text-slate-200 hover:border-slate-600'
+          }`}
+        >
+          <SlidersHorizontal className="w-3.5 h-3.5" />
+          검색 임계값
+        </button>
+      </div>
+
+      {subTab === 'provider' && <ProviderSettings />}
+      {subTab === 'thresholds' && <ThresholdSettings />}
+    </div>
+  );
+}
+
+
+// ── LLM 프로바이더 설정 컴포넌트 ──
+
+function ProviderSettings() {
   const qc = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const [form, setForm] = useState<FormState | null>(null);
@@ -153,12 +230,11 @@ export function LLMSettings() {
   const isConnected = config?.is_connected;
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-slate-200 flex items-center gap-2">
-            <Cpu className="w-5 h-5 text-indigo-400" />
+          <h2 className="text-lg font-semibold text-slate-200">
             LLM 프로바이더 설정
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -392,8 +468,6 @@ export function LLMSettings() {
         <p>• API Key는 각 사용자가 프로필 설정에서 개별 등록합니다. 이 화면에서는 변경할 수 없습니다.</p>
       </div>
 
-      {/* Search thresholds */}
-      <ThresholdSettings />
     </div>
   );
 }

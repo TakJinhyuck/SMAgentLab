@@ -8,7 +8,6 @@ import {
   ChevronDown,
   ChevronUp,
   Activity,
-  Zap,
   LogOut,
   User,
   Shield,
@@ -17,8 +16,10 @@ import {
   EyeOff,
   Key,
   Lock,
+  Cpu,
 } from 'lucide-react';
 import { clsx } from 'clsx';
+import { useQuery } from '@tanstack/react-query';
 import { useAppStore } from '../../store/useAppStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { stopChatStream, clearStreamState, useStreamStore } from '../../store/useStreamStore';
@@ -26,8 +27,10 @@ import { getNamespaces } from '../../api/namespaces';
 import { getConversations, deleteConversation } from '../../api/conversations';
 import { healthCheck } from '../../api/client';
 import { changePassword, updateApiKey } from '../../api/auth';
+import { getLLMConfig } from '../../api/llm';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
+import logoSvg from '../../assets/logo.svg';
 
 export function Sidebar() {
   const location = useLocation();
@@ -41,6 +44,19 @@ export function Sidebar() {
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
   const [showSearchConfig, setShowSearchConfig] = useState(false);
   const [loadingConvs, setLoadingConvs] = useState(false);
+
+  // LLM config — display current model
+  const { data: llmConfig } = useQuery({
+    queryKey: ['llm-config'],
+    queryFn: getLLMConfig,
+    staleTime: 30_000,
+    refetchOnMount: 'always',
+  });
+  const currentModel = llmConfig
+    ? llmConfig.provider === 'ollama'
+      ? llmConfig.ollama.model
+      : llmConfig.inhouse.model || 'Agent 기본'
+    : null;
 
   // Health check on mount and every 30s
   useEffect(() => {
@@ -130,20 +146,24 @@ export function Sidebar() {
       {/* Logo */}
       <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
-            <Zap className="w-4 h-4 text-white" />
-          </div>
+          <img src={logoSvg} alt="logo" className="w-7 h-7" />
           <span className="font-semibold text-slate-100 text-sm">Ops-Navigator</span>
         </div>
         {/* Backend health indicator */}
         {backendOk === null && (
-          <Activity className="w-4 h-4 text-slate-500 animate-pulse" />
+          <div className="p-1 rounded-lg cursor-default" title="백엔드 상태 확인 중...">
+            <Activity className="w-4 h-4 text-slate-500 animate-pulse" />
+          </div>
         )}
         {backendOk === true && (
-          <span className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0" title="백엔드 정상" />
+          <div className="p-1.5 rounded-lg hover:bg-slate-700/50 cursor-default transition-colors" title="백엔드 서버 정상 연결됨">
+            <span className="block w-2 h-2 rounded-full bg-emerald-500" />
+          </div>
         )}
         {backendOk === false && (
-          <span className="w-2 h-2 rounded-full bg-rose-500 flex-shrink-0" title="백엔드 연결 실패" />
+          <div className="p-1.5 rounded-lg hover:bg-slate-700/50 cursor-default transition-colors" title="백엔드 서버 연결 실패 — 서버가 중지되었거나 네트워크 문제">
+            <span className="block w-2 h-2 rounded-full bg-rose-500" />
+          </div>
         )}
       </div>
 
@@ -179,6 +199,16 @@ export function Sidebar() {
           Admin
         </NavLink>
       </nav>
+
+      {/* Current LLM model indicator */}
+      {currentModel && (
+        <div className="px-4 py-1.5 border-b border-slate-700 flex items-center gap-1.5">
+          <Cpu className="w-3 h-3 text-slate-500 flex-shrink-0" />
+          <span className="text-[11px] text-slate-500 truncate" title={currentModel}>
+            <span className="text-slate-600">LLM Model :</span> {currentModel}
+          </span>
+        </div>
+      )}
 
       {/* Namespace selector — Chat only */}
       {isChatPage && (

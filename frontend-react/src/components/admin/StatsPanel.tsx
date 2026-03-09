@@ -415,6 +415,7 @@ export function StatsPanel() {
     queryFn: () => getNamespaceStats(selectedNs),
     enabled: !!selectedNs,
     staleTime: 10_000,
+    refetchOnMount: 'always',
   });
 
   const resolveRate = stats && stats.total_queries > 0

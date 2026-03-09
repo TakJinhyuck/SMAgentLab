@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { clsx } from 'clsx';
-import { Database, BookOpen, BarChart2, Search, Layers, Zap, Cpu, Users } from 'lucide-react';
+import { Database, BookOpen, BarChart2, Search, Layers, Zap, Settings, Users } from 'lucide-react';
 import { NamespaceManager } from '../components/admin/NamespaceManager';
 import { KnowledgeTable } from '../components/admin/KnowledgeTable';
 import { GlossaryTable } from '../components/admin/GlossaryTable';
@@ -27,7 +27,7 @@ const TABS: Tab[] = [
   { id: 'fewshots', label: 'Few-shot', icon: <Zap className="w-4 h-4" /> },
   { id: 'stats', label: '통계', icon: <BarChart2 className="w-4 h-4" /> },
   { id: 'debug', label: '파이프라인 디버그', icon: <Search className="w-4 h-4" /> },
-  { id: 'llm', label: 'LLM 설정', icon: <Cpu className="w-4 h-4" /> },
+  { id: 'llm', label: '시스템 설정', icon: <Settings className="w-4 h-4" /> },
   { id: 'users', label: '사용자 관리', icon: <Users className="w-4 h-4" />, adminOnly: true },
 ];
 

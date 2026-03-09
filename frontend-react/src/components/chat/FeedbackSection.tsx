@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ThumbsUp, ThumbsDown } from 'lucide-react';
 import { postFeedback } from '../../api/feedback';
@@ -30,6 +31,7 @@ export function FeedbackSection({
   knowledgeId,
   messageId,
 }: FeedbackSectionProps) {
+  const qc = useQueryClient();
   const [state, setState] = useState<FeedbackState>('idle');
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState<KnowledgeFormData>({
@@ -43,6 +45,9 @@ export function FeedbackSection({
   const handlePositive = async () => {
     try {
       await postFeedback({ namespace, question, answer, knowledge_id: knowledgeId ?? null, is_positive: true, message_id: messageId ?? null });
+      // 긍정 피드백 → fewshot 자동 생성 + knowledge base_weight 변경
+      qc.invalidateQueries({ queryKey: ['fewshots'] });
+      qc.invalidateQueries({ queryKey: ['knowledge'] });
     } catch (err) {
       console.error(err);
     }
@@ -53,6 +58,8 @@ export function FeedbackSection({
   const handleSkip = async () => {
     try {
       await postFeedback({ namespace, question, answer, knowledge_id: knowledgeId ?? null, is_positive: false, message_id: messageId ?? null });
+      // 부정 피드백 → knowledge base_weight 변경
+      qc.invalidateQueries({ queryKey: ['knowledge'] });
     } catch (err) {
       console.error(err);
     }
@@ -71,6 +78,7 @@ export function FeedbackSection({
         base_weight: form.base_weight,
       });
       await postFeedback({ namespace, question, answer, knowledge_id: knowledgeId ?? null, is_positive: false, message_id: messageId ?? null });
+      qc.invalidateQueries({ queryKey: ['knowledge'] });
     } catch (err) {
       console.error(err);
     } finally {

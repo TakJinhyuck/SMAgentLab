@@ -54,6 +54,7 @@ export function GlossaryTable() {
     queryFn: () => getGlossary(selectedNs),
     enabled: !!selectedNs,
     staleTime: 15_000,
+    refetchOnMount: 'always',
   });
 
   const createMutation = useMutation({

@@ -59,6 +59,7 @@ export function FewshotTable() {
     queryFn: () => getFewshots(selectedNs),
     enabled: !!selectedNs,
     staleTime: 15_000,
+    refetchOnMount: 'always',
   });
 
   const createMutation = useMutation({

@@ -22,6 +22,7 @@ export function NamespaceManager() {
     queryKey: ['namespaces-detail'],
     queryFn: getNamespacesDetail,
     staleTime: 10_000,
+    refetchOnMount: 'always',
   });
 
   const createMutation = useMutation({
