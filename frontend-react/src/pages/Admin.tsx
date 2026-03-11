@@ -21,7 +21,7 @@ interface Tab {
 }
 
 const TABS: Tab[] = [
-  { id: 'namespaces', label: '파트 DB 관리', icon: <Layers className="w-4 h-4" /> },
+  { id: 'namespaces', label: '기준 정보 관리', icon: <Layers className="w-4 h-4" /> },
   { id: 'knowledge', label: '지식 베이스', icon: <BookOpen className="w-4 h-4" /> },
   { id: 'glossary', label: '용어집', icon: <Database className="w-4 h-4" /> },
   { id: 'fewshots', label: 'Few-shot', icon: <Zap className="w-4 h-4" /> },

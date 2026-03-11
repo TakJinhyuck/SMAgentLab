@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Trash2, Plus, Shield, User as UserIcon, Users, Building2, Pencil, Check, X } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
+import { Modal } from '../ui/Modal';
 import { getUsers, updateUser, deleteUser, getAllParts, createPart, deletePart, renamePart } from '../../api/auth';
 import { useAuthStore } from '../../store/useAuthStore';
 import type { User } from '../../types';
@@ -25,7 +26,7 @@ export function UserManager() {
           }`}
         >
           <Building2 className="w-3.5 h-3.5" />
-          파트 관리
+          파트 · 업무구분
         </button>
         <button
           onClick={() => setSubTab('users')}
@@ -50,15 +51,20 @@ export function UserManager() {
 
 function PartSection() {
   const qc = useQueryClient();
+  const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
-  const [error, setError] = useState('');
+  const [createError, setCreateError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
+  const [deleteError, setDeleteError] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [renameError, setRenameError] = useState('');
   const editRef = useRef<HTMLInputElement>(null);
 
-  const { data: parts = [] } = useQuery({
+  const { data: parts = [], isLoading } = useQuery({
     queryKey: ['parts-all'],
     queryFn: getAllParts,
+    refetchOnMount: 'always',
   });
 
   useEffect(() => {
@@ -70,11 +76,12 @@ function PartSection() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['parts-all'] });
       qc.invalidateQueries({ queryKey: ['namespaces'] });
+      setShowCreate(false);
       setNewName('');
-      setError('');
+      setCreateError('');
     },
     onError: (err: Error) => {
-      setError(err.message || '파트 생성 실패');
+      setCreateError(err.message || '파트 생성 실패');
     },
   });
 
@@ -86,9 +93,10 @@ function PartSection() {
       qc.invalidateQueries({ queryKey: ['namespaces'] });
       qc.invalidateQueries({ queryKey: ['namespaces-detail'] });
       setEditingId(null);
+      setRenameError('');
     },
     onError: (err: Error) => {
-      alert(err.message || '파트 이름 변경 실패');
+      setRenameError(err.message || '파트 이름 변경 실패');
     },
   });
 
@@ -97,104 +105,186 @@ function PartSection() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['parts-all'] });
       qc.invalidateQueries({ queryKey: ['users'] });
+      setDeleteTarget(null);
+      setDeleteError('');
     },
     onError: (err: Error) => {
-      alert(err.message || '파트 삭제 실패');
+      setDeleteError(err.message || '파트 삭제 실패');
     },
   });
-
-  const handleCreate = () => {
-    if (!newName.trim() || createMutation.isPending) return;
-    setError('');
-    createMutation.mutate(newName.trim());
-  };
 
   const commitRename = (partId: number, oldName: string) => {
     const trimmed = editingName.trim();
     if (!trimmed || trimmed === oldName) { setEditingId(null); return; }
+    setRenameError('');
     renameMutation.mutate({ id: partId, name: trimmed });
   };
 
-  const handleDelete = (partId: number) => {
-    if (!confirm('이 파트를 삭제하시겠습니까?')) return;
-    deleteMutation.mutate(partId);
-  };
-
   return (
-    <div>
-      <h3 className="text-lg font-semibold text-slate-100 mb-4">파트 (부서) 관리</h3>
-      <div className="bg-slate-800 rounded-xl border border-slate-700 p-4">
-        <div className="flex gap-2 mb-4">
-          <input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && handleCreate()}
-            placeholder="새 파트 이름"
-            className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-          />
-          <Button onClick={handleCreate} loading={createMutation.isPending} size="sm">
-            <Plus className="w-4 h-4" />
-            추가
-          </Button>
-        </div>
-        {error && <p className="text-sm text-rose-400 mb-3">{error}</p>}
-
-        <div className="flex flex-wrap gap-2">
-          {parts.map((p) => (
-            <div
-              key={p.id}
-              className="flex items-center gap-1.5 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5"
-            >
-              {editingId === p.id ? (
-                <>
-                  <input
-                    ref={editRef}
-                    value={editingName}
-                    onChange={(e) => setEditingName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.nativeEvent.isComposing) commitRename(p.id, p.name);
-                      if (e.key === 'Escape') setEditingId(null);
-                    }}
-                    onBlur={() => commitRename(p.id, p.name)}
-                    className="bg-slate-800 border border-indigo-500 rounded px-1.5 py-0.5 text-xs text-slate-100 outline-none w-24"
-                  />
-                  <button onClick={() => commitRename(p.id, p.name)} className="text-emerald-400 hover:text-emerald-300">
-                    <Check className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => setEditingId(null)} className="text-slate-500 hover:text-slate-300">
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={() => { setEditingId(p.id); setEditingName(p.name); }}
-                    className="text-sm text-slate-200 hover:text-indigo-300 transition-colors"
-                    title="클릭하여 이름 수정"
-                  >
-                    {p.name}
-                  </button>
-                  <button
-                    onClick={() => { setEditingId(p.id); setEditingName(p.name); }}
-                    className="text-slate-600 hover:text-indigo-400 transition-colors"
-                    title="이름 수정"
-                  >
-                    <Pencil className="w-3 h-3" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(p.id)}
-                    className="text-slate-500 hover:text-rose-400 transition-colors"
-                    title="파트 삭제"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </>
-              )}
-            </div>
-          ))}
-          {parts.length === 0 && <p className="text-sm text-slate-500">등록된 파트 없음</p>}
-        </div>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-slate-200">파트 (부서) 관리</h2>
+        <Button variant="primary" size="sm" onClick={() => { setShowCreate(true); setNewName(''); setCreateError(''); }}>
+          <Plus className="w-4 h-4" />
+          새 파트
+        </Button>
       </div>
+
+      {isLoading && <div className="text-center py-10 text-slate-500 animate-pulse">로딩 중...</div>}
+
+      <div className="grid gap-3">
+        {parts.map((p) => (
+          <div
+            key={p.id}
+            className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden hover:border-slate-600 transition-colors"
+          >
+            <div className="flex items-center gap-4 p-4">
+              {/* 아이콘 */}
+              <div className="w-10 h-10 rounded-xl bg-indigo-900/40 border border-indigo-700/40 flex items-center justify-center flex-shrink-0">
+                <Building2 className="w-5 h-5 text-indigo-400" />
+              </div>
+
+              {/* 파트 이름 + 편집 */}
+              <div className="flex-1 min-w-0">
+                {editingId === p.id ? (
+                  <span className="flex items-center gap-1.5">
+                    <input
+                      ref={editRef}
+                      value={editingName}
+                      onChange={(e) => setEditingName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) commitRename(p.id, p.name);
+                        if (e.key === 'Escape') { setEditingId(null); setRenameError(''); }
+                      }}
+                      onBlur={() => commitRename(p.id, p.name)}
+                      className="bg-slate-900 border border-indigo-500 rounded px-2 py-0.5 text-sm text-slate-100 font-semibold outline-none w-40"
+                    />
+                    <button onClick={() => commitRename(p.id, p.name)} className="text-emerald-400 hover:text-emerald-300">
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => { setEditingId(null); setRenameError(''); }} className="text-slate-500 hover:text-slate-300">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                    {renameError && <span className="text-xs text-rose-400">{renameError}</span>}
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 group">
+                    <span className="font-semibold text-slate-200">{p.name}</span>
+                    <button
+                      onClick={() => { setEditingId(p.id); setEditingName(p.name); }}
+                      className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-indigo-400 transition-all"
+                      title="이름 수정"
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                  </span>
+                )}
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-xs text-slate-500">
+                    생성: {new Date(p.created_at).toLocaleDateString('ko-KR')}
+                  </span>
+                </div>
+              </div>
+
+              {/* 소속 인원 수 + 삭제 */}
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <div className="flex items-center gap-1.5 bg-slate-700/50 rounded-lg px-3 py-1.5">
+                  <Users className="w-3.5 h-3.5 text-slate-400" />
+                  <span className="text-sm font-medium text-slate-200">{p.user_count ?? 0}</span>
+                  <span className="text-xs text-slate-500">명</span>
+                </div>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => { setDeleteTarget({ id: p.id, name: p.name }); setDeleteError(''); }}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        ))}
+        {!isLoading && parts.length === 0 && (
+          <div className="text-center py-10 text-slate-500">등록된 파트 없음</div>
+        )}
+      </div>
+
+      {/* 파트 생성 모달 */}
+      <Modal isOpen={showCreate} onClose={() => setShowCreate(false)} title="새 파트 생성">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1.5">
+              파트 이름 <span className="text-rose-400">*</span>
+            </label>
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && createMutation.mutate(newName.trim())}
+              placeholder="예: 딜리버스, 인프라, 지원"
+              autoFocus
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+          {createError && <p className="text-xs text-rose-400">{createError}</p>}
+          <div className="flex gap-2 justify-end">
+            <Button variant="secondary" size="sm" onClick={() => setShowCreate(false)}>취소</Button>
+            <Button
+              variant="primary"
+              size="sm"
+              loading={createMutation.isPending}
+              onClick={() => createMutation.mutate(newName.trim())}
+              disabled={!newName.trim()}
+            >
+              생성
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* 파트 삭제 확인 모달 */}
+      <Modal isOpen={!!deleteTarget} onClose={() => { setDeleteTarget(null); setDeleteError(''); }} title="파트 삭제">
+        <div className="space-y-4">
+          {deleteTarget && (() => {
+            const part = parts.find((p) => p.id === deleteTarget.id);
+            const count = part?.user_count ?? 0;
+            return count > 0 ? (
+              <div className="space-y-3">
+                <div className="flex items-start gap-3 bg-amber-900/20 border border-amber-700/40 rounded-lg p-3">
+                  <Users className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-amber-300">
+                    <span className="font-semibold">{deleteTarget.name}</span> 파트에 소속된 사용자가{' '}
+                    <span className="font-semibold">{count}명</span> 있습니다.
+                    <br />사용자 목록 탭에서 다른 파트로 이동한 후 삭제하세요.
+                  </p>
+                </div>
+                <div className="flex justify-end">
+                  <Button variant="secondary" size="sm" onClick={() => setDeleteTarget(null)}>확인</Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-slate-300">
+                  <span className="font-semibold text-rose-400">{deleteTarget.name}</span> 파트를 삭제하시겠습니까?
+                  <br />소속 사용자가 없으며, 이 작업은 되돌릴 수 없습니다.
+                </p>
+                {deleteError && <p className="text-xs text-rose-400">{deleteError}</p>}
+                <div className="flex gap-2 justify-end">
+                  <Button variant="secondary" size="sm" onClick={() => setDeleteTarget(null)}>취소</Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    loading={deleteMutation.isPending}
+                    onClick={() => deleteMutation.mutate(deleteTarget.id)}
+                  >
+                    삭제
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -204,6 +294,7 @@ function PartSection() {
 function UserSection() {
   const qc = useQueryClient();
   const currentUser = useAuthStore((s) => s.user);
+  const [filterPart, setFilterPart] = useState<string>('');
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['users'],
@@ -261,11 +352,37 @@ function UserSection() {
     );
   }
 
+  const filteredUsers = filterPart ? users.filter((u) => u.part === filterPart) : users;
+
   return (
     <div>
-      <h3 className="text-lg font-semibold text-slate-100 mb-4">
-        사용자 목록 <span className="text-sm text-slate-500 font-normal">({users.length}명)</span>
-      </h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-slate-100">
+          사용자 목록 <span className="text-sm text-slate-500 font-normal">({filteredUsers.length}/{users.length}명)</span>
+        </h3>
+      </div>
+      {/* 파트 필터 */}
+      <div className="flex items-center gap-2 flex-wrap mb-3">
+        <button
+          onClick={() => setFilterPart('')}
+          className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+            filterPart === '' ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-slate-200'
+          }`}
+        >
+          전체
+        </button>
+        {parts.map((p) => (
+          <button
+            key={p.id}
+            onClick={() => setFilterPart(filterPart === p.name ? '' : p.name)}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+              filterPart === p.name ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400 hover:bg-slate-600 hover:text-slate-200'
+            }`}
+          >
+            {p.name} <span className="opacity-70">({users.filter((u) => u.part === p.name).length})</span>
+          </button>
+        ))}
+      </div>
       <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
@@ -279,7 +396,7 @@ function UserSection() {
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
+            {filteredUsers.map((u) => (
               <tr key={u.id} className="border-b border-slate-700/50 hover:bg-slate-800/50">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">

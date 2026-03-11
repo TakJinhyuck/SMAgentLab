@@ -217,16 +217,29 @@ async def list_parts(exclude_admin_parts: bool = False) -> list[dict]:
         if exclude_admin_parts:
             rows = await conn.fetch(
                 """
-                SELECT id, name, created_at::text FROM ops_part
-                WHERE id NOT IN (
+                SELECT p.id, p.name, p.created_at::text,
+                       COUNT(u.id) AS user_count
+                FROM ops_part p
+                LEFT JOIN ops_user u ON u.part_id = p.id
+                WHERE p.id NOT IN (
                     SELECT DISTINCT part_id FROM ops_user
                     WHERE role = 'admin' AND part_id IS NOT NULL
                 )
-                ORDER BY name
+                GROUP BY p.id, p.name, p.created_at
+                ORDER BY p.name
                 """
             )
         else:
-            rows = await conn.fetch("SELECT id, name, created_at::text FROM ops_part ORDER BY name")
+            rows = await conn.fetch(
+                """
+                SELECT p.id, p.name, p.created_at::text,
+                       COUNT(u.id) AS user_count
+                FROM ops_part p
+                LEFT JOIN ops_user u ON u.part_id = p.id
+                GROUP BY p.id, p.name, p.created_at
+                ORDER BY p.name
+                """
+            )
     return [dict(r) for r in rows]
 
 
@@ -249,10 +262,19 @@ async def rename_part(part_id: int, new_name: str) -> Optional[dict]:
         )
         if existing:
             return None
+        old_name = await conn.fetchval("SELECT name FROM ops_part WHERE id = $1", part_id)
+        if old_name is None:
+            return None
         row = await conn.fetchrow(
             "UPDATE ops_part SET name = $2 WHERE id = $1 RETURNING id, name, created_at::text",
             part_id, new_name,
         )
+        if row:
+            # 비정규화 부서명 컬럼 cascade 업데이트
+            await conn.execute("UPDATE ops_namespace SET owner_part = $2 WHERE owner_part = $1", old_name, new_name)
+            await conn.execute("UPDATE ops_knowledge SET created_by_part = $2 WHERE created_by_part = $1", old_name, new_name)
+            await conn.execute("UPDATE ops_glossary SET created_by_part = $2 WHERE created_by_part = $1", old_name, new_name)
+            await conn.execute("UPDATE ops_fewshot SET created_by_part = $2 WHERE created_by_part = $1", old_name, new_name)
     return dict(row) if row else None
 
 

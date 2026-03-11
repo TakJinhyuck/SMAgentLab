@@ -64,3 +64,4 @@ class PartOut(BaseModel):
     id: int
     name: str
     created_at: str
+    user_count: int = 0

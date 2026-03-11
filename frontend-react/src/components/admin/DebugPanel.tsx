@@ -178,32 +178,41 @@ function ContextPreviewModal({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="LLM 컨텍스트 미리보기" maxWidth="max-w-7xl">
-      <div className="grid grid-cols-2 gap-4 h-[70vh]">
-        <div className="flex flex-col min-h-0">
-          <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Raw Text</h4>
-          <div
-            ref={leftRef}
-            onScroll={() => handleScroll('left')}
-            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-4 overflow-y-auto min-h-0"
-          >
-            <pre className="text-xs text-slate-400 font-mono whitespace-pre-wrap leading-relaxed">
-              {content}
-            </pre>
+      {!content ? (
+        <div className="flex flex-col items-center justify-center h-48 gap-3 text-slate-500">
+          <p className="text-sm font-medium">컨텍스트 없음</p>
+          <p className="text-xs text-center text-slate-600">
+            임계값 기준을 통과한 지식/Few-shot이 없어 LLM에 전달되는 컨텍스트가 비어 있습니다.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-4 h-[70vh]">
+          <div className="flex flex-col min-h-0">
+            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Raw Text</h4>
+            <div
+              ref={leftRef}
+              onScroll={() => handleScroll('left')}
+              className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-4 overflow-y-auto min-h-0"
+            >
+              <pre className="text-xs text-slate-400 font-mono whitespace-pre-wrap leading-relaxed">
+                {content}
+              </pre>
+            </div>
+          </div>
+          <div className="flex flex-col min-h-0">
+            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Rendered</h4>
+            <div
+              ref={rightRef}
+              onScroll={() => handleScroll('right')}
+              className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-4 overflow-y-auto min-h-0 prose prose-invert prose-sm max-w-none prose-pre:bg-slate-800 prose-pre:border prose-pre:border-slate-700 prose-code:text-indigo-300 prose-th:text-slate-300 prose-td:text-slate-400"
+            >
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                {content}
+              </ReactMarkdown>
+            </div>
           </div>
         </div>
-        <div className="flex flex-col min-h-0">
-          <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Rendered</h4>
-          <div
-            ref={rightRef}
-            onScroll={() => handleScroll('right')}
-            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-4 overflow-y-auto min-h-0 prose prose-invert prose-sm max-w-none prose-pre:bg-slate-800 prose-pre:border prose-pre:border-slate-700 prose-code:text-indigo-300 prose-th:text-slate-300 prose-td:text-slate-400"
-          >
-            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-              {content}
-            </ReactMarkdown>
-          </div>
-        </div>
-      </div>
+      )}
     </Modal>
   );
 }
@@ -249,6 +258,8 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showContext, setShowContext] = useState(false);
+  const [selectedResult, setSelectedResult] = useState<DebugSearchResponse['results'][number] | null>(null);
+  const [selectedFewshot, setSelectedFewshot] = useState<DebugSearchResponse['fewshots'][number] | null>(null);
 
   // Pipeline step animation
   const [pipelineStep, setPipelineStep] = useState(-1);
@@ -422,7 +433,7 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
                 </div>
               </div>
               {result.glossary_match ? (
-                <div className="bg-indigo-900/20 border border-indigo-700/30 rounded-lg px-3 py-2.5">
+                <div className="bg-indigo-50 border border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-700/30 rounded-lg px-3 py-2.5">
                   <p className="text-xs text-slate-500 mb-1">용어 매핑 성공</p>
                   <div className="flex items-center gap-2 flex-wrap">
                     <Badge color="indigo">{result.glossary_match.term}</Badge>
@@ -436,7 +447,7 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
                   </p>
                 </div>
               ) : (
-                <div className="bg-slate-700/30 rounded-lg px-3 py-2 space-y-1">
+                <div className="bg-slate-100 border border-slate-200 dark:bg-slate-700/30 dark:border-transparent rounded-lg px-3 py-2 space-y-1">
                   <p className="text-xs text-slate-500">용어 매핑 없음 (유사도 {gMin.toFixed(2)} 미만)</p>
                   <p className="text-[10px] text-slate-500">용어집에 관련 용어를 추가하면 검색 정확도가 높아집니다.</p>
                 </div>
@@ -444,42 +455,99 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
             </div>
 
             {/* Few-shots */}
-            <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-3">
-              <div className="flex items-baseline justify-between">
-                <h3 className="text-sm font-semibold text-slate-300">
-                  Few-shot 후보 ({result.fewshots.filter(f => f.similarity >= fsMin).length}/{result.fewshots.length}건 통과)
-                </h3>
-                <span className="text-[10px] text-slate-500">{fsMin.toFixed(2)}+ 적용 · {(fsMin + 0.2).toFixed(2)}+ 고품질 매칭</span>
+            <div className="space-y-3">
+              <div>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-slate-300">
+                    Few-shot 후보 ({result.fewshots.filter(f => f.similarity >= fsMin).length}/{result.fewshots.length}건 통과)
+                  </h3>
+                  <span className="text-xs text-slate-500">
+                    유사도 기준 {fsMin.toFixed(2)}+
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  유사도 기준: <span className="text-emerald-400/70">{(fsMin + 0.2).toFixed(2)}+</span> 고품질 · <span className="text-violet-400/70">{(fsMin + 0.1).toFixed(2)}+</span> 보통 · <span className="text-amber-400/70">{fsMin.toFixed(2)}~{(fsMin + 0.1).toFixed(2)}</span> 낮음 · {fsMin.toFixed(2)} 미만은 컨텍스트에서 제외
+                </p>
               </div>
-              {result.fewshots.length > 0 ? (
-                <div className="space-y-2">
-                  {result.fewshots.map((fs, i) => {
-                    const passed = fs.similarity >= fsMin;
-                    return (
-                      <div key={i} className={`rounded-lg px-3 py-2.5 space-y-1.5 ${passed ? 'bg-slate-900/60' : 'bg-slate-900/30 border border-dashed border-slate-700'}`}>
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            {!passed && <span className="text-[10px] text-rose-400 bg-rose-400/10 px-1.5 py-0.5 rounded font-medium flex-shrink-0">미달</span>}
-                            <p className={`text-xs font-medium ${passed ? 'text-slate-300' : 'text-slate-500'}`}>{fs.question}</p>
-                          </div>
-                          <span className={`text-xs font-mono flex-shrink-0 ${passed ? (fs.similarity >= fsMin + 0.2 ? 'text-emerald-400' : fs.similarity >= fsMin + 0.1 ? 'text-violet-400' : 'text-amber-400') : 'text-rose-400'}`}>
-                            {fs.similarity.toFixed(4)}
-                          </span>
-                        </div>
-                        <p className={`text-xs line-clamp-2 ${passed ? 'text-slate-500' : 'text-slate-500'}`}>{fs.answer}</p>
-                        {!passed && (
-                          <p className="text-[10px] text-rose-400/70">유사도 {fs.similarity.toFixed(4)} &lt; 기준 {fsMin.toFixed(2)} → 컨텍스트 미포함</p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="bg-slate-700/30 rounded-lg px-3 py-2 space-y-1">
-                  <p className="text-xs text-slate-500">등록된 Few-shot 없음</p>
-                  <p className="text-[10px] text-slate-500">Few-shot 탭에서 양질의 Q&A 예시를 등록하면 답변 품질이 향상됩니다.</p>
-                </div>
+
+              {result.fewshots.length === 0 && (
+                <div className="text-center py-8 text-slate-500 text-sm">등록된 Few-shot이 없습니다.</div>
               )}
+
+              {result.fewshots.map((fs, i) => {
+                const passed = fs.similarity >= fsMin;
+                const scoreColor = fs.similarity >= fsMin + 0.2 ? 'text-emerald-400' : fs.similarity >= fsMin + 0.1 ? 'text-violet-400' : fs.similarity >= fsMin ? 'text-amber-400' : 'text-rose-400';
+                const borderAccent = fs.similarity >= fsMin + 0.2 ? 'border-l-emerald-500' : fs.similarity >= fsMin + 0.1 ? 'border-l-violet-500' : fs.similarity >= fsMin ? 'border-l-amber-500' : 'border-l-rose-500/60';
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setSelectedFewshot(fs)}
+                    className={`w-full bg-slate-800 border border-slate-700 border-l-4 ${borderAccent} rounded-xl px-4 py-3 flex items-center gap-3 hover:bg-slate-700/40 transition-colors text-left ${!passed ? 'opacity-60' : ''}`}
+                  >
+                    <span className="text-xs text-slate-500 flex-shrink-0">#{i + 1}</span>
+                    <span className="font-semibold text-slate-200 flex-1 truncate">{fs.question}</span>
+                    {!passed && (
+                      <span className="text-[10px] font-medium bg-rose-500/15 text-rose-400 border border-rose-500/30 px-1.5 py-0.5 rounded flex-shrink-0">컨텍스트 제외</span>
+                    )}
+                    <span className={`text-base font-bold flex-shrink-0 ${scoreColor}`}>
+                      {fs.similarity.toFixed(4)}
+                    </span>
+                  </button>
+                );
+              })}
+
+              {/* Few-shot 상세 모달 */}
+              {selectedFewshot && (() => {
+                const fs = selectedFewshot;
+                const passed = fs.similarity >= fsMin;
+                const scoreColor = fs.similarity >= fsMin + 0.2 ? 'text-emerald-400' : fs.similarity >= fsMin + 0.1 ? 'text-violet-400' : fs.similarity >= fsMin ? 'text-amber-400' : 'text-rose-400';
+                return (
+                  <Modal isOpen onClose={() => setSelectedFewshot(null)} title="Few-shot 상세" maxWidth="max-w-2xl">
+                    <div className="space-y-5 overflow-y-auto max-h-[70vh]">
+                      {/* 점수 헤더 */}
+                      <div className="flex items-center justify-between bg-slate-900/60 rounded-lg px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          {!passed && (
+                            <span className="text-[10px] font-medium bg-rose-500/15 text-rose-400 border border-rose-500/30 px-1.5 py-0.5 rounded">컨텍스트 제외</span>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-slate-500 mb-0.5">유사도</p>
+                          <p className={`text-2xl font-bold ${scoreColor}`}>{fs.similarity.toFixed(4)}</p>
+                        </div>
+                      </div>
+
+                      {/* 유사도 바 */}
+                      <div>
+                        <div className="flex justify-between text-xs text-slate-400 mb-1">
+                          <span>유사도 점수</span>
+                          <span className={`font-mono ${scoreColor}`}>{fs.similarity.toFixed(4)}</span>
+                        </div>
+                        <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${fs.similarity >= fsMin + 0.2 ? 'bg-emerald-500' : fs.similarity >= fsMin + 0.1 ? 'bg-violet-500' : fs.similarity >= fsMin ? 'bg-amber-500' : 'bg-rose-500'}`}
+                            style={{ width: `${Math.min(fs.similarity * 100, 100)}%` }}
+                          />
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-1">기준: {fsMin.toFixed(2)} · {!passed ? `미달 → 컨텍스트 제외` : '통과 → 컨텍스트 포함'}</p>
+                      </div>
+
+                      {/* 질문 */}
+                      <div>
+                        <p className="text-xs text-slate-500 mb-1.5">질문</p>
+                        <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap bg-slate-900/40 rounded-lg p-3">{fs.question}</p>
+                      </div>
+
+                      {/* 답변 */}
+                      <div>
+                        <p className="text-xs text-slate-500 mb-1.5">답변</p>
+                        <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap bg-slate-900/40 rounded-lg p-3">{fs.answer}</p>
+                      </div>
+                    </div>
+                  </Modal>
+                );
+              })()}
             </div>
 
             {/* Search results */}
@@ -502,91 +570,126 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
                 <div className="text-center py-8 text-slate-500 text-sm">검색 결과가 없습니다.</div>
               )}
 
-              {result.results.map((r, i) => (
-                <div key={r.id} className="bg-slate-800 border border-slate-700 rounded-xl p-5 space-y-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-500">#{i + 1}</span>
-                        <span className="font-semibold text-slate-200">{r.container_name}</span>
-                        <span className="text-xs bg-indigo-900/40 text-indigo-300 border border-indigo-700/40 px-2 py-0.5 rounded-full">
-                          ID: {r.id}
-                        </span>
+              {result.results.map((r, i) => {
+                const isExcluded = r.final_score < kMin;
+                const scoreColor = r.final_score >= kHigh ? 'text-emerald-400' : r.final_score >= kMid ? 'text-indigo-400' : r.final_score >= kMin ? 'text-amber-400' : 'text-rose-400';
+                const borderAccent = r.final_score >= kHigh ? 'border-l-emerald-500' : r.final_score >= kMid ? 'border-l-indigo-500' : r.final_score >= kMin ? 'border-l-amber-500' : 'border-l-rose-500/60';
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => setSelectedResult(r)}
+                    className={`w-full bg-slate-800 border border-slate-700 border-l-4 ${borderAccent} rounded-xl px-4 py-3 flex items-center gap-3 hover:bg-slate-700/40 transition-colors text-left ${isExcluded ? 'opacity-60' : ''}`}
+                  >
+                    <span className="text-xs text-slate-500 flex-shrink-0">#{i + 1}</span>
+                    <span className="font-semibold text-slate-200 flex-1 truncate">{r.container_name}</span>
+                    {isExcluded && (
+                      <span className="text-[10px] font-medium bg-rose-500/15 text-rose-400 border border-rose-500/30 px-1.5 py-0.5 rounded flex-shrink-0">컨텍스트 제외</span>
+                    )}
+                    {r.target_tables.length > 0 && (
+                      <span className="text-xs font-mono text-slate-400 flex-shrink-0 truncate max-w-[160px]">
+                        {r.target_tables.join(', ')}
+                      </span>
+                    )}
+                    <span className={`text-base font-bold flex-shrink-0 ${scoreColor}`}>
+                      {r.final_score.toFixed(4)}
+                    </span>
+                  </button>
+                );
+              })}
+
+              {/* 검색 결과 상세 모달 */}
+              {selectedResult && (() => {
+                const r = selectedResult;
+                const isExcluded = r.final_score < kMin;
+                const scoreColor = r.final_score >= kHigh ? 'text-emerald-400' : r.final_score >= kMid ? 'text-indigo-400' : r.final_score >= kMin ? 'text-amber-400' : 'text-rose-400';
+                return (
+                  <Modal isOpen onClose={() => setSelectedResult(null)} title={r.container_name} maxWidth="max-w-2xl">
+                    <div className="space-y-5 overflow-y-auto max-h-[70vh]">
+                      {/* 점수 헤더 */}
+                      <div className="flex items-center justify-between bg-slate-900/60 rounded-lg px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-500">ID: {r.id}</span>
+                          {isExcluded && (
+                            <span className="text-[10px] font-medium bg-rose-500/15 text-rose-400 border border-rose-500/30 px-1.5 py-0.5 rounded">컨텍스트 제외</span>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-slate-500 mb-0.5">최종 점수</p>
+                          <p className={`text-2xl font-bold ${scoreColor}`}>{r.final_score.toFixed(4)}</p>
+                        </div>
                       </div>
+
+                      {/* 관련 테이블 */}
                       {r.target_tables.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1.5">
-                          {r.target_tables.map((t) => (
-                            <span key={t} className="text-xs font-mono bg-slate-700 text-slate-300 px-2 py-0.5 rounded">
-                              {t}
+                        <div>
+                          <p className="text-xs text-slate-500 mb-1.5">관련 테이블</p>
+                          <div className="flex flex-wrap gap-1">
+                            {r.target_tables.map((t) => (
+                              <span key={t} className="text-xs font-mono bg-slate-700 text-slate-300 px-2 py-0.5 rounded">{t}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 점수 바 */}
+                      <div className="space-y-2">
+                        {[
+                          { label: '의미 유사도 점수', value: r.v_score, color: 'bg-emerald-500', textColor: 'text-emerald-400' },
+                          { label: '키워드 일치 점수', value: r.k_score, color: 'bg-yellow-500', textColor: 'text-yellow-400' },
+                        ].map(({ label, value, color, textColor }) => (
+                          <div key={label}>
+                            <div className="flex justify-between text-xs text-slate-400 mb-1">
+                              <span>{label}</span>
+                              <span className={`font-mono ${textColor}`}>{value.toFixed(4)}</span>
+                            </div>
+                            <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                              <div className={`h-full ${color} rounded-full`} style={{ width: `${Math.min(value * 100, 100)}%` }} />
+                            </div>
+                          </div>
+                        ))}
+                        <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
+                          <div className="flex items-center gap-1.5">
+                            <span>문서 우선순위</span>
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                              r.base_weight >= 2 ? 'bg-emerald-500/20 text-emerald-300' :
+                              r.base_weight >= 1.5 ? 'bg-indigo-500/20 text-indigo-300' :
+                              'bg-slate-600/40 text-slate-300'
+                            }`}>
+                              {r.base_weight >= 2 ? '높음' : r.base_weight >= 1.5 ? '보통' : '기본'}
                             </span>
-                          ))}
+                          </div>
+                          <span className="font-mono text-slate-200">{r.base_weight}</span>
+                        </div>
+                      </div>
+
+                      {/* 내용 */}
+                      <div>
+                        <p className="text-xs text-slate-500 mb-1.5">내용</p>
+                        <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap bg-slate-900/40 rounded-lg p-3">{r.content}</p>
+                      </div>
+
+                      {/* 쿼리 템플릿 */}
+                      {r.query_template && (
+                        <div>
+                          <p className="text-xs text-slate-500 mb-1.5">쿼리 템플릿</p>
+                          <CodeBlock code={r.query_template} language="sql" />
                         </div>
                       )}
                     </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-xs text-slate-500 mb-0.5">최종 점수</p>
-                      <p className={`text-xl font-bold ${r.final_score >= kHigh ? 'text-emerald-400' : r.final_score >= kMid ? 'text-indigo-400' : r.final_score >= kMin ? 'text-amber-400' : 'text-rose-400'}`}>{r.final_score.toFixed(4)}</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    {[
-                      { label: '의미 유사도 점수', value: r.v_score, color: 'bg-emerald-500', textColor: 'text-emerald-400' },
-                      { label: '키워드 일치 점수', value: r.k_score, color: 'bg-yellow-500', textColor: 'text-yellow-400' },
-                    ].map(({ label, value, color, textColor }) => (
-                      <div key={label}>
-                        <div className="flex justify-between text-xs text-slate-400 mb-1">
-                          <span>{label}</span>
-                          <span className={`font-mono ${textColor}`}>{value.toFixed(4)}</span>
-                        </div>
-                        <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                          <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${Math.min(value * 100, 100)}%` }} />
-                        </div>
-                      </div>
-                    ))}
-                    <div className="flex items-center justify-between text-xs text-slate-400">
-                      <div className="flex items-center gap-1.5">
-                        <span>문서 우선순위</span>
-                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                          r.base_weight >= 2 ? 'bg-emerald-500/20 text-emerald-300' :
-                          r.base_weight >= 1.5 ? 'bg-indigo-500/20 text-indigo-300' :
-                          'bg-slate-600/40 text-slate-300'
-                        }`}>
-                          {r.base_weight >= 2 ? '높음' : r.base_weight >= 1.5 ? '보통' : '기본'}
-                        </span>
-                      </div>
-                      <span className="font-mono text-slate-200">{r.base_weight}</span>
-                    </div>
-                    <p className="text-[11px] text-slate-400">
-                      1.0=기본 · 1.5+=보통(검색 시 우선 노출) · 2.0+=높음(핵심 문서) · 피드백 시 자동 상승
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-xs text-slate-500 mb-1.5">내용</p>
-                    <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">{r.content}</p>
-                  </div>
-
-                  {r.query_template && (
-                    <div>
-                      <p className="text-xs text-slate-500 mb-1.5">쿼리 템플릿</p>
-                      <CodeBlock code={r.query_template} language="sql" />
-                    </div>
-                  )}
-                </div>
-              ))}
+                  </Modal>
+                );
+              })()}
             </div>
 
             {/* Context preview modal trigger */}
-            {result.context_preview && (
-              <button
-                onClick={() => setShowContext(true)}
-                className="w-full flex items-center justify-center gap-2 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm font-semibold text-slate-300 hover:bg-slate-700/50 hover:border-indigo-500/50 transition-colors"
-              >
-                <Eye className="w-4 h-4 text-indigo-400" />
-                LLM 컨텍스트 미리보기
-              </button>
-            )}
+            <button
+              onClick={() => setShowContext(true)}
+              className="w-full flex items-center justify-center gap-2 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-sm font-semibold text-slate-300 hover:bg-slate-700/50 hover:border-indigo-500/50 transition-colors"
+            >
+              <Eye className="w-4 h-4 text-indigo-400" />
+              LLM 컨텍스트 미리보기
+            </button>
 
             {/* Context preview modal */}
             <ContextPreviewModal

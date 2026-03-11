@@ -226,26 +226,28 @@ export function KnowledgeTable() {
               onClick={() => startEdit(item)}
             >
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-3 flex-wrap">
                   {item.category && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 border border-violet-300 dark:bg-violet-900/40 dark:text-violet-300 dark:border-violet-700/40">{item.category}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 border border-violet-300 dark:bg-violet-900/40 dark:text-violet-300 dark:border-violet-700/40 font-medium">{item.category}</span>
                   )}
                   {item.container_name && (
-                    <>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-100 text-cyan-700 border border-cyan-300 dark:bg-cyan-900/40 dark:text-cyan-400 dark:border-cyan-800/40">컨테이너</span>
+                    <span className="flex items-center gap-1 flex-wrap">
+                      <span className="text-[10px] text-slate-500 font-medium flex-shrink-0">컨테이너</span>
                       {item.container_name.split(',').map((c) => c.trim()).filter(Boolean).map((c) => (
-                        <Badge key={c} color="indigo">{c}</Badge>
+                        <Badge key={c} color="cyan">{c}</Badge>
                       ))}
-                    </>
+                    </span>
                   )}
                   {(item.target_tables ?? []).length > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-300 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-800/40 ml-1">테이블</span>
-                  )}
-                  {(item.target_tables ?? []).slice(0, 3).map((t) => (
-                    <Badge key={t} color="indigo">{t}</Badge>
-                  ))}
-                  {(item.target_tables ?? []).length > 3 && (
-                    <Badge color="slate">+{(item.target_tables ?? []).length - 3}</Badge>
+                    <span className="flex items-center gap-1 flex-wrap">
+                      <span className="text-[10px] text-slate-500 font-medium flex-shrink-0">테이블</span>
+                      {(item.target_tables ?? []).slice(0, 3).map((t) => (
+                        <Badge key={t} color="amber">{t}</Badge>
+                      ))}
+                      {(item.target_tables ?? []).length > 3 && (
+                        <Badge color="slate">+{(item.target_tables ?? []).length - 3}</Badge>
+                      )}
+                    </span>
                   )}
                   <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${weightClass(item.base_weight)}`}>
                     우선순위: {weightLabel(item.base_weight)} ({item.base_weight})

@@ -19,6 +19,7 @@ export interface Part {
   id: number;
   name: string;
   created_at: string;
+  user_count?: number;
 }
 
 // Namespace types

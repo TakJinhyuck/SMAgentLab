@@ -66,7 +66,14 @@ async def _run_pipeline(
         retrieval.fetch_fewshots(namespace, query_vec, **fewshot_kwargs),
     )
 
-    fs_section = retrieval.build_fewshot_section(fewshots)
+    # debug 모드에서는 모든 퓨샷을 반환하지만, context 빌드는 실제 임계값 기준으로 필터링
+    if debug:
+        th = retrieval.get_thresholds()
+        fewshots_for_context = [fs for fs in fewshots if fs["similarity"] >= th["fewshot_min_similarity"]]
+    else:
+        fewshots_for_context = fewshots
+
+    fs_section = retrieval.build_fewshot_section(fewshots_for_context)
     doc_context = retrieval.build_context(results)
     context = f"{fs_section}\n\n{doc_context}" if fs_section else doc_context
 

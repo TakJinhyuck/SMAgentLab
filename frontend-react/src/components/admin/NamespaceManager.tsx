@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Database, ChevronDown, ChevronUp, Tag, Pencil, Check, X } from 'lucide-react';
+import { Plus, Trash2, Database, Tag, Pencil, Check, X } from 'lucide-react';
 import {
   getNamespacesDetail, createNamespace, deleteNamespace, renameNamespace,
   getCategories, createCategory, deleteCategory, renameCategory,
@@ -253,7 +253,7 @@ export function NamespaceManager({ onNavigate }: NamespaceManagerProps) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-slate-200">파트 DB 관리</h2>
+        <h2 className="text-lg font-semibold text-slate-200">기준 정보 관리</h2>
         <Button
           variant="primary"
           size="sm"
@@ -275,7 +275,7 @@ export function NamespaceManager({ onNavigate }: NamespaceManagerProps) {
         {namespaces.map((ns) => (
           <div
             key={ns.name}
-            className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden cursor-pointer hover:border-slate-600 transition-colors"
+            className="group bg-slate-800 border border-slate-700 rounded-xl overflow-hidden cursor-pointer hover:border-indigo-500/50 transition-colors"
             onClick={() => setExpandedCat(expandedCat === ns.name ? null : ns.name)}
           >
             <div className="flex items-center gap-4 p-4">
@@ -343,11 +343,6 @@ export function NamespaceManager({ onNavigate }: NamespaceManagerProps) {
                 </div>
               </div>
               <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                <Tag className="w-3.5 h-3.5 text-slate-500" />
-                {expandedCat === ns.name
-                  ? <ChevronUp className="w-4 h-4 text-slate-400" />
-                  : <ChevronDown className="w-4 h-4 text-slate-400" />
-                }
                 {canDeleteNs(ns.owner_part) && (
                   <Button
                     variant="danger"
@@ -359,6 +354,13 @@ export function NamespaceManager({ onNavigate }: NamespaceManagerProps) {
                 )}
               </div>
             </div>
+            {expandedCat !== ns.name && (
+              <div className="max-h-0 overflow-hidden group-hover:max-h-10 transition-all duration-200">
+                <div className="px-4 py-2 bg-indigo-50 border-t border-indigo-200 dark:bg-indigo-900/30 dark:border-indigo-700/30">
+                  <span className="text-[11px] text-indigo-600 dark:text-indigo-300/80">클릭하면 이 파트의 업무구분을 추가·수정·삭제할 수 있습니다</span>
+                </div>
+              </div>
+            )}
             {expandedCat === ns.name && (
               <div className="px-4 pb-4" onClick={(e) => e.stopPropagation()}>
                 <CategorySection namespace={ns.name} canModify={canModifyNs(ns.owner_part)} />

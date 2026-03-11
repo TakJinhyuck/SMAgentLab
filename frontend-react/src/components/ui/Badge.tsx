@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 
 interface BadgeProps {
   children: ReactNode;
-  color?: 'indigo' | 'emerald' | 'rose' | 'slate' | 'yellow';
+  color?: 'indigo' | 'emerald' | 'rose' | 'slate' | 'yellow' | 'cyan' | 'amber';
   className?: string;
 }
 
@@ -18,6 +18,8 @@ export function Badge({ children, color = 'slate', className }: BadgeProps) {
           'bg-rose-100 text-rose-700 border border-rose-300 dark:bg-rose-900/50 dark:text-rose-300 dark:border-rose-700/50': color === 'rose',
           'bg-zinc-100 text-zinc-600 border border-zinc-300 dark:bg-zinc-700/60 dark:text-zinc-300 dark:border-zinc-600/40': color === 'slate',
           'bg-yellow-100 text-yellow-700 border border-yellow-300 dark:bg-yellow-900/50 dark:text-yellow-300 dark:border-yellow-700/50': color === 'yellow',
+          'bg-cyan-100 text-cyan-700 border border-cyan-300 dark:bg-cyan-900/50 dark:text-cyan-300 dark:border-cyan-700/50': color === 'cyan',
+          'bg-amber-100 text-amber-700 border border-amber-300 dark:bg-amber-900/50 dark:text-amber-300 dark:border-amber-700/50': color === 'amber',
         },
         className,
       )}
