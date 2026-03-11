@@ -1,7 +1,7 @@
 """POST /api/feedback — 좋아요/싫어요 피드백 처리."""
 from fastapi import APIRouter, Depends
 
-from core.database import get_conn
+from core.database import get_conn, resolve_namespace_id
 from core.dependencies import get_current_user
 from domain.feedback.schemas import FeedbackCreate
 from shared.embedding import embedding_service
@@ -12,8 +12,7 @@ router = APIRouter(prefix="/api/feedback", tags=["feedback"])
 @router.post("", status_code=201)
 async def submit_feedback(body: FeedbackCreate, user: dict = Depends(get_current_user)):
     async with get_conn() as conn:
-        # namespace name → id 변환
-        ns_id = await conn.fetchval("SELECT id FROM ops_namespace WHERE name = $1", body.namespace)
+        ns_id = await resolve_namespace_id(conn, body.namespace)
 
         await conn.execute(
             "INSERT INTO ops_feedback (knowledge_id, namespace_id, question, is_positive, message_id) VALUES ($1,$2,$3,$4,$5)",

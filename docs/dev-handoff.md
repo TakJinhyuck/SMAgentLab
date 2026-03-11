@@ -19,7 +19,7 @@ docker compose up --build -d
 
 > **마지막 업데이트**: 2026-03-11
 > **브랜치**: main
-> **최근 변경**: rename_part cascade 완전 수정 / 지식 베이스 배지 cyan·amber 구분 / 사용자 목록 파트 필터 / 디버그 패널 퓨샷 모달화 / context_preview 버그 수정
+> **최근 변경**: 백엔드 클린 코드 리팩토링 (critical 버그 수정 + NS 헬퍼 통합 + DB 인덱스) + 디버그 패널 색상 수정
 
 ### 진행 중 / 미완료
 
@@ -27,11 +27,13 @@ docker compose up --build -d
 
 ### 백로그
 
+- [ ] **Step 2: 디렉토리 재편 + 프론트엔드** (두 번째 에이전트 추가 시): `domain/` → `platform/` + `agents/`, DB prefix rename, 에이전트 선택 UI → [platform-expansion-strategy.md](platform-expansion-strategy.md) Step 2 참조
+- [ ] **플랫폼 어드민 확장**: 에이전트 디렉토리 UI, 파트-에이전트 접근 제어, 통합 대시보드 agent_type 필터 → [platform-expansion-strategy.md](platform-expansion-strategy.md) §9 참조
+- [ ] **프롬프트 템플릿 동적 관리**: 코드 하드코딩 → DB 저장·편집 (Admin UI), 플랫폼 공통 + 에이전트별 분리
 - [ ] Docker 이미지 레지스트리 push
 - [ ] 사용자별 검색 설정 저장 (현재 세션 단위)
-- [ ] 테스트 코드 (pytest)
+- [ ] 테스트 코드 (pytest) — conftest에 인증 fixture 필요, 현재 TC 01~06은 인증 미포함 상태
 - [ ] CI/CD 파이프라인
-- [ ] **프롬프트 템플릿 동적 관리**: 코드 하드코딩 → DB 저장·편집 (Admin UI), 네임스페이스/파트 단위, 변수 치환 미리보기
 
 ---
 
@@ -41,6 +43,10 @@ docker compose up --build -d
 
 | 항목 | 내용 |
 |------|------|
+| **AgentRegistry 패턴** | `chat_stream` → `AgentRegistry.get("knowledge_rag").stream_chat()` 위임. 새 에이전트 추가 시 `agents/` 하위 모듈 + Registry 등록만으로 완결 |
+| **공유 헬퍼** | `domain/chat/helpers.py` — 에이전트·라우터 양쪽에서 사용하는 DB 헬퍼 (메시지 업데이트, 쿼리로그, 클린업 등) |
+| **resolve_namespace_id** | `core/database.py` — NS name→id 변환 공통 헬퍼. 모든 도메인에서 이 함수 사용 (인라인 쿼리 금지) |
+| **agent_type 컬럼** | `ops_conversation`, `ops_query_log`, `ops_feedback`에 `agent_type VARCHAR(50) DEFAULT 'knowledge_rag'` + `ops_feedback.meta JSONB` |
 | 네임스페이스 권한 | `owner_part = NULL` → 전체 CRUD / 같은 파트 → CRUD / 다른 파트 → 읽기 전용 |
 | 파트 비정규화 | `created_by_part`, `owner_part`는 FK가 아닌 문자열 → `rename_part` 시 4개 테이블 수동 cascade |
 | 검색 설정 단일 소스 | `config.py` 기본값 → `GET/PUT /api/llm/search-defaults` → 프론트엔드 fetch |
@@ -54,6 +60,9 @@ docker compose up --build -d
 
 ## 완료 이력 (최근순)
 
+- **백엔드 클린 코드 리팩토링**: `inhouse.py` critical 버그 수정 (`_extract_ext_conversation_id` 미정의 → `_extract_session`), `resolve_namespace_id` 공통 헬퍼 통합 (중복 11곳 제거), 응답 형식 통일 (`ok`→`status`), 중복 except 정리, DB 인덱스 6개 추가
+- **디버그 패널 용어 매핑 색상 수정**: `bg-slate-100` → `bg-zinc-100` (라이트모드 slate 역전 이슈)
+- **AgentBase/AgentRegistry 도입**: `agents/base.py` 추상 클래스 + 레지스트리 싱글턴, `agents/knowledge_rag/agent.py` RAG 에이전트 구현, `domain/chat/helpers.py` 공유 헬퍼 추출, `chat_stream` 에이전트 위임, `agent_type` DB 컬럼 추가
 - **rename_part cascade 완전 수정**: `ops_namespace.owner_part` + `ops_knowledge/glossary/fewshot.created_by_part` 4개 테이블 cascade UPDATE
 - **지식 베이스 배지 cyan·amber**: 컨테이너명 cyan / 테이블명 amber, 레이블+배지 `<span>` 그룹 포함관계 시각화
 - **사용자 목록 파트 필터**: `UserManager > UserSection` 파트별 필터 버튼 + 인원 수 표시

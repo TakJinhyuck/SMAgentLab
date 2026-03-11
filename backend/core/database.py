@@ -30,3 +30,8 @@ async def get_conn() -> AsyncIterator[asyncpg.Connection]:
     assert _pool is not None, "DB pool is not initialized"
     async with _pool.acquire() as conn:
         yield conn
+
+
+async def resolve_namespace_id(conn: asyncpg.Connection, namespace: str) -> int | None:
+    """namespace name → id 변환. 없으면 None."""
+    return await conn.fetchval("SELECT id FROM ops_namespace WHERE name = $1", namespace)

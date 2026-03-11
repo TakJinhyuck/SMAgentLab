@@ -18,6 +18,9 @@ from domain.fewshot.router import router as fewshot_router
 from domain.feedback.router import router as feedback_router
 from domain.admin.router import router as admin_router
 
+from agents.base import AgentRegistry
+from agents.knowledge_rag.agent import KnowledgeRagAgent
+
 logger = logging.getLogger(__name__)
 
 _ROUTERS = [
@@ -253,6 +256,12 @@ async def _run_migrations() -> None:
                 END $$;
             """)
 
+        # ── agent_type 컬럼 추가 (멀티 에이전트 확장 준비) ───────────────
+        await conn.execute("ALTER TABLE ops_conversation ADD COLUMN IF NOT EXISTS agent_type VARCHAR(50) NOT NULL DEFAULT 'knowledge_rag'")
+        await conn.execute("ALTER TABLE ops_query_log ADD COLUMN IF NOT EXISTS agent_type VARCHAR(50) NOT NULL DEFAULT 'knowledge_rag'")
+        await conn.execute("ALTER TABLE ops_feedback ADD COLUMN IF NOT EXISTS agent_type VARCHAR(50) NOT NULL DEFAULT 'knowledge_rag'")
+        await conn.execute("ALTER TABLE ops_feedback ADD COLUMN IF NOT EXISTS meta JSONB")
+
         # ── query_log answer 역매칭 ────────────────────────────────────
         await conn.execute("""
             UPDATE ops_query_log ql
@@ -286,12 +295,23 @@ async def _run_migrations() -> None:
               )
         """)
 
+        # ── 성능 인덱스 (멱등) ──────────────────────────────────────────
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_message_conv_id ON ops_message (conversation_id, created_at)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_conversation_user_id ON ops_conversation (user_id, created_at DESC)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_conversation_ns_user ON ops_conversation (namespace_id, user_id)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_query_log_ns_status ON ops_query_log (namespace_id, status)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_fewshot_ns_id ON ops_fewshot (namespace_id)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_feedback_ns_id ON ops_feedback (namespace_id)")
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await init_pool()
     await _run_migrations()
     embedding_service.load()
+
+    # ── 에이전트 등록 ──
+    AgentRegistry.register(KnowledgeRagAgent())
 
     llm_ok = await get_llm_provider().health_check()
     level, msg = ("INFO", "연결 확인됨") if llm_ok else ("WARNING", "연결 불가 — LLM 기능 제한")

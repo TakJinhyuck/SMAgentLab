@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-from core.database import get_conn
+from core.database import get_conn, resolve_namespace_id
 from core.config import settings
 from shared.embedding import embedding_service
 
@@ -72,16 +72,11 @@ class RetrievalResult:
     k_score: float = field(default=0.0)
 
 
-async def _resolve_namespace_id(conn, namespace: str) -> Optional[int]:
-    """namespace name → id 변환. 없으면 None."""
-    return await conn.fetchval("SELECT id FROM ops_namespace WHERE name = $1", namespace)
-
-
 async def map_glossary_term(
     namespace: str, query_vec: list[float]
 ) -> Optional[GlossaryMatch]:
     async with get_conn() as conn:
-        ns_id = await _resolve_namespace_id(conn, namespace)
+        ns_id = await resolve_namespace_id(conn, namespace)
         if ns_id is None:
             return None
         row = await conn.fetchrow(
@@ -110,7 +105,7 @@ async def search_knowledge(
     category: Optional[str] = None,
 ) -> list[RetrievalResult]:
     async with get_conn() as conn:
-        ns_id = await _resolve_namespace_id(conn, namespace)
+        ns_id = await resolve_namespace_id(conn, namespace)
         if ns_id is None:
             return []
         category_filter = "AND (k.category = $7 OR k.category IS NULL)" if category else ""
@@ -172,7 +167,7 @@ async def fetch_fewshots(
 ) -> list[dict]:
     min_sim = min_similarity if min_similarity is not None else get_thresholds()["fewshot_min_similarity"]
     async with get_conn() as conn:
-        ns_id = await _resolve_namespace_id(conn, namespace)
+        ns_id = await resolve_namespace_id(conn, namespace)
         if ns_id is None:
             return []
         rows = await conn.fetch(

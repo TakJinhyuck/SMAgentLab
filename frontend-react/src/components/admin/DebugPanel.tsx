@@ -447,7 +447,7 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
                   </p>
                 </div>
               ) : (
-                <div className="bg-slate-100 border border-slate-200 dark:bg-slate-700/30 dark:border-transparent rounded-lg px-3 py-2 space-y-1">
+                <div className="bg-zinc-100 border border-zinc-200 dark:bg-zinc-700/20 dark:border-zinc-600/30 rounded-lg px-3 py-2 space-y-1">
                   <p className="text-xs text-slate-500">용어 매핑 없음 (유사도 {gMin.toFixed(2)} 미만)</p>
                   <p className="text-[10px] text-slate-500">용어집에 관련 용어를 추가하면 검색 정확도가 높아집니다.</p>
                 </div>

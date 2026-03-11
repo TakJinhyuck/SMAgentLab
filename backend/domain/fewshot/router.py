@@ -1,7 +1,7 @@
 """Few-shot CRUD — 네임스페이스 소유 파트 기반 권한."""
 from fastapi import APIRouter, Depends, HTTPException
 
-from core.database import get_conn
+from core.database import get_conn, resolve_namespace_id
 from core.dependencies import get_current_user, check_namespace_ownership
 from shared.embedding import embedding_service
 from domain.knowledge import retrieval
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/fewshots", tags=["fewshots"])
 @router.get("", response_model=list[FewshotOut])
 async def list_fewshots(namespace: str, user: dict = Depends(get_current_user)):
     async with get_conn() as conn:
-        ns_id = await conn.fetchval("SELECT id FROM ops_namespace WHERE name = $1", namespace)
+        ns_id = await resolve_namespace_id(conn, namespace)
         if ns_id is None:
             return []
         rows = await conn.fetch(
@@ -57,7 +57,7 @@ async def create_fewshot(body: FewshotCreate, user: dict = Depends(get_current_u
     await check_namespace_ownership(body.namespace, user)
     embedding = await embedding_service.embed(body.question)
     async with get_conn() as conn:
-        ns_id = await conn.fetchval("SELECT id FROM ops_namespace WHERE name = $1", body.namespace)
+        ns_id = await resolve_namespace_id(conn, body.namespace)
         if ns_id is None:
             raise HTTPException(status_code=404, detail="네임스페이스를 찾을 수 없습니다.")
         row = await conn.fetchrow(

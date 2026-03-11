@@ -3,18 +3,13 @@ from __future__ import annotations
 
 from typing import Optional
 
-from core.database import get_conn
+from core.database import get_conn, resolve_namespace_id
 from shared.embedding import embedding_service
 
 _KNOWLEDGE_COLS = """k.id, n.name AS namespace, k.container_name, k.target_tables,
     k.content, k.query_template, k.base_weight, k.category,
     k.created_by_part, k.created_by_user_id,
     k.created_at::text, k.updated_at::text"""
-
-
-async def _get_namespace_id(conn, namespace: str) -> Optional[int]:
-    """namespace name → id 변환 헬퍼."""
-    return await conn.fetchval("SELECT id FROM ops_namespace WHERE name = $1", namespace)
 
 
 # ─── ops_knowledge ────────────────────────────────────────────────────────────
@@ -33,7 +28,7 @@ async def create_knowledge(
 ) -> dict:
     embedding = await embedding_service.embed(content)
     async with get_conn() as conn:
-        ns_id = await _get_namespace_id(conn, namespace)
+        ns_id = await resolve_namespace_id(conn, namespace)
         if ns_id is None:
             raise ValueError(f"Namespace '{namespace}' not found")
         row = await conn.fetchrow(
@@ -131,7 +126,7 @@ async def list_knowledge(namespace: Optional[str] = None) -> list[dict]:
         k.created_at::text, k.updated_at::text"""
     async with get_conn() as conn:
         if namespace:
-            ns_id = await _get_namespace_id(conn, namespace)
+            ns_id = await resolve_namespace_id(conn, namespace)
             if ns_id is None:
                 return []
             rows = await conn.fetch(
@@ -183,7 +178,7 @@ async def create_glossary(
 ) -> dict:
     embedding = await embedding_service.embed(description)
     async with get_conn() as conn:
-        ns_id = await _get_namespace_id(conn, namespace)
+        ns_id = await resolve_namespace_id(conn, namespace)
         if ns_id is None:
             raise ValueError(f"Namespace '{namespace}' not found")
         row = await conn.fetchrow(
@@ -203,7 +198,7 @@ async def list_glossary(namespace: Optional[str] = None) -> list[dict]:
     _cols = "g.id, n.name AS namespace, g.term, g.description, g.created_by_part, g.created_by_user_id, u.username AS created_by_username"
     async with get_conn() as conn:
         if namespace:
-            ns_id = await _get_namespace_id(conn, namespace)
+            ns_id = await resolve_namespace_id(conn, namespace)
             if ns_id is None:
                 return []
             rows = await conn.fetch(

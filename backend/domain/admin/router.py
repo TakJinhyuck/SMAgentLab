@@ -3,7 +3,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query as QueryParam
 
-from core.database import get_conn
+from core.database import get_conn, resolve_namespace_id
 from core.dependencies import get_current_user, get_current_admin, check_namespace_ownership
 from shared.embedding import embedding_service
 from domain.admin.schemas import (
@@ -34,11 +34,6 @@ def _extract_config(body) -> dict:
         if val is not None:
             cfg[field] = val
     return cfg
-
-
-async def _get_namespace_id(conn, namespace: str) -> Optional[int]:
-    """namespace name → id 변환 헬퍼."""
-    return await conn.fetchval("SELECT id FROM ops_namespace WHERE name = $1", namespace)
 
 
 async def _insert_feedback_if_message_exists(conn, namespace_id: int, question: str, message_id: int | None) -> None:
@@ -107,7 +102,7 @@ async def delete_namespace_endpoint(name: str, user: dict = Depends(get_current_
 @router.get("/api/namespaces/{name}/categories", response_model=list[KnowledgeCategoryOut])
 async def get_namespace_categories(name: str, user: dict = Depends(get_current_user)):
     async with get_conn() as conn:
-        ns_id = await _get_namespace_id(conn, name)
+        ns_id = await resolve_namespace_id(conn, name)
         if ns_id is None:
             return []
         rows = await conn.fetch(
@@ -127,7 +122,7 @@ async def get_namespace_categories(name: str, user: dict = Depends(get_current_u
 async def create_namespace_category(name: str, body: KnowledgeCategoryCreate, user: dict = Depends(get_current_user)):
     await check_namespace_ownership(name, user)
     async with get_conn() as conn:
-        ns_id = await _get_namespace_id(conn, name)
+        ns_id = await resolve_namespace_id(conn, name)
         if ns_id is None:
             raise HTTPException(status_code=404, detail="네임스페이스를 찾을 수 없습니다.")
         existing = await conn.fetchval(
@@ -151,7 +146,7 @@ async def rename_namespace_category(name: str, cat_name: str, body: KnowledgeCat
     await check_namespace_ownership(name, user)
     new_name = body.name.strip()
     async with get_conn() as conn:
-        ns_id = await _get_namespace_id(conn, name)
+        ns_id = await resolve_namespace_id(conn, name)
         if ns_id is None:
             raise HTTPException(status_code=404, detail="네임스페이스를 찾을 수 없습니다.")
         existing = await conn.fetchval(
@@ -181,7 +176,7 @@ async def rename_namespace_category(name: str, cat_name: str, body: KnowledgeCat
 async def delete_namespace_category(name: str, cat_name: str, user: dict = Depends(get_current_user)):
     await check_namespace_ownership(name, user)
     async with get_conn() as conn:
-        ns_id = await _get_namespace_id(conn, name)
+        ns_id = await resolve_namespace_id(conn, name)
         if ns_id is None:
             raise HTTPException(status_code=404, detail="네임스페이스를 찾을 수 없습니다.")
         # 해당 카테고리를 사용하는 지식 항목의 category를 NULL로 초기화
@@ -205,7 +200,7 @@ async def suggest_category(name: str, body: dict, user: dict = Depends(get_curre
         return {"suggested_category": None}
 
     async with get_conn() as conn:
-        ns_id = await _get_namespace_id(conn, name)
+        ns_id = await resolve_namespace_id(conn, name)
         if ns_id is None:
             return {"suggested_category": None}
         rows = await conn.fetch(
@@ -293,7 +288,7 @@ async def get_stats(user: dict = Depends(get_current_user)):
 @router.get("/api/stats/namespace/{name}", response_model=NamespaceDetailStats)
 async def get_namespace_stats(name: str, user: dict = Depends(get_current_user)):
     async with get_conn() as conn:
-        ns_id = await _get_namespace_id(conn, name)
+        ns_id = await resolve_namespace_id(conn, name)
         if ns_id is None:
             raise HTTPException(status_code=404, detail=f"Namespace '{name}' not found")
         summary = await conn.fetchrow(
@@ -342,7 +337,7 @@ async def get_namespace_queries(
     user: dict = Depends(get_current_user),
 ):
     async with get_conn() as conn:
-        ns_id = await _get_namespace_id(conn, name)
+        ns_id = await resolve_namespace_id(conn, name)
         if ns_id is None:
             return []
         if status:

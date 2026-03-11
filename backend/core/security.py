@@ -79,5 +79,5 @@ def get_user_api_key(user: dict) -> str | None:
         return None
     try:
         return decrypt_api_key(encrypted)
-    except (ValueError, Exception):
+    except Exception:
         return None

@@ -136,7 +136,7 @@ class InHouseLLMProvider(LLMProvider):
                 resp = await client.post(self._url, json=payload)
                 resp.raise_for_status()
                 data = resp.json()
-                new_ext_conv_id = _extract_ext_conversation_id(data)
+                new_ext_conv_id, _ = _extract_session(data)
                 if new_ext_conv_id and on_ext_conversation_id:
                     on_ext_conversation_id(new_ext_conv_id)
                 yield _extract_answer(data)
