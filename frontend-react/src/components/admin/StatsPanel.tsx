@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { MessageSquare, CheckCircle, XCircle, Clock, FileText, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
@@ -525,6 +525,13 @@ export function StatsPanel() {
   const { data: namespaces = [] } = useQuery({ queryKey: ['namespaces'], queryFn: getNamespaces, staleTime: 30_000 });
   const { data: nsDetails = [] } = useQuery({ queryKey: ['namespaces-detail'], queryFn: getNamespacesDetail, staleTime: 30_000 });
   const sortedNamespaces = sortNamespacesByUserPart(namespaces, user?.part, nsDetails);
+
+  // 삭제 등으로 selectedNs가 유효하지 않으면 리셋
+  useEffect(() => {
+    if (selectedNs && namespaces.length > 0 && !namespaces.includes(selectedNs)) {
+      setSelectedNs('');
+    }
+  }, [namespaces, selectedNs]);
   const nsOwnerPart = nsDetails.find((n) => n.name === selectedNs)?.owner_part;
   // owner_part 없으면 공통(모두 가능), 있으면 같은 파트 or admin
   const canModifyNs = user?.role === 'admin' || !nsOwnerPart || nsOwnerPart === user?.part;
