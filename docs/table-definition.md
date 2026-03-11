@@ -1,6 +1,6 @@
 # Ops-Navigator 테이블 정의서
 
-> **Version**: 3.0
+> **Version**: 3.1
 > **DBMS**: PostgreSQL 16 + pgvector
 > **Extensions**: `vector`, `pg_trgm`
 > **벡터 차원**: 768 (paraphrase-multilingual-mpnet-base-v2)
@@ -221,6 +221,7 @@ final_score = (w_vector * v_score + w_keyword * k_score) * (1 + base_weight)
 | 6 | `mapped_term` | VARCHAR(200) | YES | NULL | - | 매핑된 용어 |
 | 7 | `message_id` | INT | YES | NULL | - | 연결된 메시지 ID |
 | 8 | `created_at` | TIMESTAMPTZ | NO | `NOW()` | - | 생성일시 |
+| 9 | `agent_type` | VARCHAR(50) | NO | `'knowledge_rag'` | - | 에이전트 유형 (멀티 에이전트 확장용) |
 
 **인덱스**:
 
@@ -228,6 +229,7 @@ final_score = (w_vector * v_score + w_keyword * k_score) * (1 + base_weight)
 |---------|------|------|------|
 | `idx_query_log_ns` | namespace_id | B-Tree | 네임스페이스 필터 |
 | `idx_query_log_created` | created_at | B-Tree | 시간순 정렬 |
+| `idx_query_log_ns_status` | (namespace_id, status) | B-Tree | 네임스페이스+상태 복합 필터 |
 
 **status 상태값**:
 
@@ -252,6 +254,7 @@ final_score = (w_vector * v_score + w_keyword * k_score) * (1 + base_weight)
 | 5 | `user_id` | INT | YES | NULL | FK → ops_user(id) ON DELETE CASCADE | 대화 소유 사용자 |
 | 6 | `inhouse_conv_id` | VARCHAR(200) | YES | NULL | - | 사내 LLM 대화 연결 ID |
 | 7 | `created_at` | TIMESTAMPTZ | NO | `NOW()` | - | 생성일시 |
+| 8 | `agent_type` | VARCHAR(50) | NO | `'knowledge_rag'` | - | 에이전트 유형 (멀티 에이전트 확장용) |
 
 **인덱스**:
 
@@ -259,6 +262,8 @@ final_score = (w_vector * v_score + w_keyword * k_score) * (1 + base_weight)
 |---------|------|------|------|
 | `idx_conversation_ns` | namespace_id | B-Tree | 네임스페이스 필터 |
 | `idx_conversation_user` | user_id | B-Tree | 사용자별 대화 조회 |
+| `idx_conversation_user_id` | (user_id, created_at DESC) | B-Tree | 사용자별 최신 대화 조회 |
+| `idx_conversation_ns_user` | (namespace_id, user_id) | B-Tree | 네임스페이스+사용자 복합 필터 |
 
 ---
 
@@ -282,6 +287,7 @@ final_score = (w_vector * v_score + w_keyword * k_score) * (1 + base_weight)
 | 인덱스명 | 컬럼 | 타입 | 설명 |
 |---------|------|------|------|
 | `idx_message_conv` | conversation_id | B-Tree | 대화별 메시지 조회 |
+| `idx_message_conv_id` | (conversation_id, created_at) | B-Tree | 대화별 시간순 메시지 조회 |
 
 **status 상태값**:
 
@@ -307,6 +313,14 @@ final_score = (w_vector * v_score + w_keyword * k_score) * (1 + base_weight)
 | 5 | `question` | TEXT | YES | NULL | - | 원본 질문 |
 | 6 | `is_positive` | BOOLEAN | NO | - | - | 긍정 여부 |
 | 7 | `created_at` | TIMESTAMPTZ | NO | `NOW()` | - | 생성일시 |
+| 8 | `agent_type` | VARCHAR(50) | NO | `'knowledge_rag'` | - | 에이전트 유형 (멀티 에이전트 확장용) |
+| 9 | `meta` | JSONB | YES | NULL | - | 에이전트별 추가 메타데이터 |
+
+**인덱스**:
+
+| 인덱스명 | 컬럼 | 타입 | 설명 |
+|---------|------|------|------|
+| `idx_feedback_ns_id` | namespace_id | B-Tree | 네임스페이스 필터 |
 
 **FK 동작**: 네임스페이스 삭제 시 CASCADE, 지식/메시지 삭제 시 해당 필드 NULL 처리 (SET NULL)
 
@@ -333,6 +347,7 @@ final_score = (w_vector * v_score + w_keyword * k_score) * (1 + base_weight)
 | 인덱스명 | 컬럼 | 타입 | 설명 |
 |---------|------|------|------|
 | `idx_fewshot_ns` | namespace_id | B-Tree | 네임스페이스 필터 |
+| `idx_fewshot_ns_id` | namespace_id | B-Tree | 네임스페이스 필터 (성능 인덱스) |
 | `idx_fewshot_emb` | embedding | HNSW (vector_cosine_ops) | 벡터 유사도 검색 |
 
 **FK 동작**: 지식 삭제 시 `knowledge_id` NULL 처리 (SET NULL)
@@ -418,6 +433,11 @@ CREATE TRIGGER trg_knowledge_updated_at
 | 14 | `ops_knowledge` | `ADD COLUMN category VARCHAR(100)` | 지식 카테고리 컬럼 추가 (nullable) |
 | 15 | - | `CREATE TABLE ops_knowledge_category` | 네임스페이스별 카테고리 목록 관리 테이블 생성 |
 | 16 | `ops_conversation` | `ADD COLUMN inhouse_conv_id VARCHAR(200)` | 사내 LLM 대화 ID 연결 컬럼 추가 |
+| 17 | `ops_conversation` | `ADD COLUMN agent_type VARCHAR(50) NOT NULL DEFAULT 'knowledge_rag'` | 에이전트 유형 구분 (멀티 에이전트 확장) |
+| 18 | `ops_query_log` | `ADD COLUMN agent_type VARCHAR(50) NOT NULL DEFAULT 'knowledge_rag'` | 에이전트 유형 구분 |
+| 19 | `ops_feedback` | `ADD COLUMN agent_type VARCHAR(50) NOT NULL DEFAULT 'knowledge_rag'` | 에이전트 유형 구분 |
+| 20 | `ops_feedback` | `ADD COLUMN meta JSONB` | 에이전트별 추가 메타데이터 |
+| 21 | 6개 테이블 | `CREATE INDEX IF NOT EXISTS idx_*` | 성능 인덱스 6개 추가 (message, conversation, query_log, fewshot, feedback) |
 
 **데이터 마이그레이션**:
 - `ops_query_log.answer`가 NULL인 레코드에 대해 `ops_message`에서 매칭되는 답변을 역보충(backfill)한다.

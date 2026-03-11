@@ -22,6 +22,9 @@
 ┌─────────────────────────────────────────────────────────────┐
 │  FastAPI Backend                                            │
 │                                                             │
+│  chat/router.py → AgentRegistry.get(agent_type)             │
+│       → agent.stream_chat(query, user, context)             │
+│                                                             │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │  Step 0: Multi-turn Search Enrichment               │   │
 │  │  (멀티턴 검색 보강 — 2턴 이상 대화에서 자동 적용)      │   │
@@ -527,8 +530,9 @@ POST /api/chat/stream              ── HTTP 핸들러 (동기) ──
     w_vector, w_keyword, top_k }   │  _cleanup_ghost_messages(conv_id)
                                    │  _save_user_message(conv_id, question)
                                    │  _pre_create_assistant_message(conv_id) → msg_id (status='generating')
+                                   │  agent = AgentRegistry.get(agent_type)
                                    │  queue = asyncio.Queue()
-                                   │  asyncio.create_task(_generate_worker(queue, ...))
+                                   │  asyncio.create_task(agent.stream_chat(queue, ...))
                                    ▼
                                    ── event_generator (SSE 스트리밍) ──
 
