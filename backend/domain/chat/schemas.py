@@ -5,14 +5,22 @@ from pydantic import BaseModel, Field
 from core.config import settings
 
 
+class ApprovedTool(BaseModel):
+    """채팅에서 사용자가 승인한 HTTP 도구 정보."""
+    tool_id: int
+    params: dict = Field(default_factory=dict)
+
+
 class ChatRequest(BaseModel):
     namespace: str
     question: str
+    agent_type: str = "knowledge_rag"
     w_vector: float = Field(default_factory=lambda: settings.default_w_vector, ge=0.0, le=1.0)
     w_keyword: float = Field(default_factory=lambda: settings.default_w_keyword, ge=0.0, le=1.0)
     top_k: int = Field(default_factory=lambda: settings.default_top_k, ge=1, le=20)
     conversation_id: Optional[int] = None
     category: Optional[str] = None
+    approved_tool: Optional[ApprovedTool] = None
 
 
 class KnowledgeResult(BaseModel):

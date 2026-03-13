@@ -10,6 +10,7 @@ import {
 import { getMessages } from '../../api/conversations';
 import { suggestCategory } from '../../api/namespaces';
 import { MessageItem } from './MessageItem';
+import { ToolRequestCard } from './ToolRequestCard';
 import type { ChatMessage } from '../../types';
 import type { PipelineStep } from '../../store/useStreamStore';
 
@@ -121,6 +122,7 @@ export function ChatContainer() {
   const streamMessages = useStreamStore((s) => s.messages);
   const streamStatus = useStreamStore((s) => s.status);
   const streamSteps = useStreamStore((s) => s.steps);
+  const toolRequest = useStreamStore((s) => s.toolRequest);
 
   // Is this conversation the one being streamed (or just completed)?
   const isStreamHere =
@@ -393,6 +395,37 @@ export function ChatContainer() {
         {/* Pipeline steps — inline below last message */}
         {isLoading && streamSteps.length > 0 && (
           <PipelineStepsToggle steps={streamSteps} />
+        )}
+
+        {/* Tool request card — awaiting user approval */}
+        {toolRequest && isStreamHere && (
+          <ToolRequestCard
+            event={toolRequest}
+            onApprove={(toolId, params) => {
+              useStreamStore.setState({ toolRequest: null });
+              // 승인된 도구로 재요청
+              loadEpochRef.current++;
+              startChatStream({
+                namespace: namespace!,
+                question: [...displayMessages].reverse().find((m) => m.role === 'user')?.content || '',
+                agentType: 'http_tool',
+                wVector: searchConfig.wVector,
+                wKeyword: searchConfig.wKeyword,
+                topK: searchConfig.topK,
+                conversationId,
+                category: category || null,
+                approvedTool: { tool_id: toolId, params },
+                onConversationCreated: (id) => {
+                  if (!useStreamStore.getState().active) return;
+                  const currentConvId = useAppStore.getState().conversationId;
+                  if (currentConvId !== id) setConversationId(id);
+                },
+              });
+            }}
+            onReject={() => {
+              useStreamStore.setState({ toolRequest: null, active: false });
+            }}
+          />
         )}
 
         <div ref={messagesEndRef} />

@@ -243,7 +243,7 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
     msg_id = await _pre_create_assistant_message(conv_id, None, [])
 
     # ── AgentRegistry를 통한 위임 ──
-    agent = AgentRegistry.get("knowledge_rag")
+    agent = AgentRegistry.get(req.agent_type)
     agent_context = {
         "namespace": req.namespace,
         "msg_id": msg_id,
@@ -254,6 +254,9 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
         "inhouse_conv_id": inhouse_conv_id,
         "category": req.category,
     }
+    # HTTP 도구 승인 정보가 있으면 컨텍스트에 추가
+    if req.approved_tool:
+        agent_context["approved_tool"] = req.approved_tool.model_dump()
 
     async def event_generator():
         yield _sse({

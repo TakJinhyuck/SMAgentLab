@@ -17,15 +17,18 @@ from domain.knowledge.router import router as knowledge_router
 from domain.fewshot.router import router as fewshot_router
 from domain.feedback.router import router as feedback_router
 from domain.admin.router import router as admin_router
+from domain.http_tool.router import router as http_tool_router
 
 from agents.base import AgentRegistry
 from agents.knowledge_rag.agent import KnowledgeRagAgent
+from agents.http_tool.agent import HttpToolAgent
 
 logger = logging.getLogger(__name__)
 
 _ROUTERS = [
     auth_router, chat_router, knowledge_router,
     fewshot_router, feedback_router, admin_router,
+    http_tool_router,
 ]
 
 
@@ -303,6 +306,28 @@ async def _run_migrations() -> None:
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_fewshot_ns_id ON ops_fewshot (namespace_id)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_feedback_ns_id ON ops_feedback (namespace_id)")
 
+        # ── HTTP 도구 테이블 ──────────────────────────────────────────────
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS ops_http_tool (
+                id              SERIAL PRIMARY KEY,
+                namespace_id    INT NOT NULL REFERENCES ops_namespace(id) ON DELETE CASCADE,
+                name            VARCHAR(100) NOT NULL,
+                description     TEXT NOT NULL DEFAULT '',
+                method          VARCHAR(10) NOT NULL DEFAULT 'GET',
+                url             TEXT NOT NULL,
+                headers         JSONB NOT NULL DEFAULT '{}',
+                param_schema    JSONB NOT NULL DEFAULT '[]',
+                response_example JSONB,
+                timeout_sec     INT NOT NULL DEFAULT 10,
+                max_response_kb INT NOT NULL DEFAULT 50,
+                is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+                created_by_user_id INT,
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_http_tool_ns_active ON ops_http_tool (namespace_id, is_active)")
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -312,6 +337,7 @@ async def lifespan(_app: FastAPI):
 
     # ── 에이전트 등록 ──
     AgentRegistry.register(KnowledgeRagAgent())
+    AgentRegistry.register(HttpToolAgent())
 
     llm_ok = await get_llm_provider().health_check()
     level, msg = ("INFO", "연결 확인됨") if llm_ok else ("WARNING", "연결 불가 — LLM 기능 제한")
