@@ -72,8 +72,10 @@ backend/
 ├── main.py              # v2.0.0 앱 진입점, 라이프사이클 (DB풀·임베딩·LLM·에이전트 초기화)
 ├── agents/              # 에이전트 레이어 (v2.3 신규)
 │   ├── base.py          #   AgentBase 추상 클래스 + AgentRegistry 싱글톤
-│   └── knowledge_rag/
-│       └── agent.py     #   KnowledgeRagAgent — stream_chat() 위임
+│   ├── knowledge_rag/
+│   │   └── agent.py     #   KnowledgeRagAgent — 하이브리드 검색 + LLM 스트리밍
+│   └── http_tool/
+│       └── agent.py     #   HttpToolAgent — 외부 API 연동 (3-case 플로우 + RAG 통합)
 ├── core/
 │   ├── config.py        # 환경변수 기반 설정 (pydantic-settings, JWT·Fernet 키 포함)
 │   ├── database.py      # asyncpg 커넥션 풀 관리 + resolve_namespace_id() 공통 헬퍼
@@ -195,6 +197,9 @@ ops_query_log    -- 질의 로그 (namespace_id FK, question, status[pending/res
 ops_conversation -- 대화방 (namespace_id FK CASCADE, title, user_id FK CASCADE, inhouse_conv_id, agent_type)
 ops_message      -- 대화 메시지 (conversation_id FK, role, content, mapped_term, results JSONB, status)
 ops_conv_summary -- 대화 요약 (conversation_id FK, summary, embedding, turn_start, turn_end)
+ops_http_tool    -- HTTP 도구 정의 (namespace_id FK, name, method, url, headers JSONB,
+                 --   param_schema JSONB, timeout_sec, max_response_kb, is_active)
+ops_prompt       -- 프롬프트 관리 (func_key, content, description) — Admin UI에서 편집 가능
 ```
 
 - **HNSW 인덱스** (`vector_cosine_ops`): 벡터 근사 최근접 이웃 검색
@@ -302,6 +307,16 @@ ops_conv_summary -- 대화 요약 (conversation_id FK, summary, embedding, turn_
 | `GET` | `/api/stats` | 네임스페이스별 통계 (전체 namespace, 지식/용어집 개수 포함) |
 | `GET` | `/api/stats/namespace/{name}` | 네임스페이스 상세 통계 (업무 유형별 분포, 미해결 목록) |
 | `DELETE` | `/api/stats/query-log/{id}` | 미해결 질의 로그 삭제 (지식 등록 후 처리 완료 표시) |
+
+### HTTP 도구
+
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| `GET` | `/api/http-tools` | 네임스페이스 HTTP 도구 목록 |
+| `POST` | `/api/http-tools` | 도구 등록 |
+| `PUT` | `/api/http-tools/{id}` | 도구 수정 |
+| `DELETE` | `/api/http-tools/{id}` | 도구 삭제 |
+| `POST` | `/api/http-tools/{id}/test` | 도구 테스트 실행 |
 
 ---
 

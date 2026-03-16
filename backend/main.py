@@ -17,15 +17,20 @@ from domain.knowledge.router import router as knowledge_router
 from domain.fewshot.router import router as fewshot_router
 from domain.feedback.router import router as feedback_router
 from domain.admin.router import router as admin_router
+from domain.http_tool.router import router as http_tool_router
+from domain.prompt.router import router as prompt_router
 
 from agents.base import AgentRegistry
 from agents.knowledge_rag.agent import KnowledgeRagAgent
+from agents.http_tool.agent import HttpToolAgent
 
 logger = logging.getLogger(__name__)
 
 _ROUTERS = [
     auth_router, chat_router, knowledge_router,
     fewshot_router, feedback_router, admin_router,
+    http_tool_router,
+    prompt_router,
 ]
 
 
@@ -303,6 +308,87 @@ async def _run_migrations() -> None:
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_fewshot_ns_id ON ops_fewshot (namespace_id)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_feedback_ns_id ON ops_feedback (namespace_id)")
 
+        # ── HTTP 도구 테이블 ──────────────────────────────────────────────
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS ops_http_tool (
+                id              SERIAL PRIMARY KEY,
+                namespace_id    INT NOT NULL REFERENCES ops_namespace(id) ON DELETE CASCADE,
+                name            VARCHAR(100) NOT NULL,
+                description     TEXT NOT NULL DEFAULT '',
+                method          VARCHAR(10) NOT NULL DEFAULT 'GET',
+                url             TEXT NOT NULL,
+                headers         JSONB NOT NULL DEFAULT '{}',
+                param_schema    JSONB NOT NULL DEFAULT '[]',
+                response_example JSONB,
+                timeout_sec     INT NOT NULL DEFAULT 10,
+                max_response_kb INT NOT NULL DEFAULT 50,
+                is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+                created_by_user_id INT,
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_http_tool_ns_active ON ops_http_tool (namespace_id, is_active)")
+
+        # ── 프롬프트 관리 테이블 ──────────────────────────────────────────
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS ops_prompt (
+                id              SERIAL PRIMARY KEY,
+                func_key        VARCHAR(100) NOT NULL UNIQUE,
+                func_name       VARCHAR(200) NOT NULL,
+                content         TEXT NOT NULL DEFAULT '',
+                description     TEXT NOT NULL DEFAULT '',
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        # 기본 프롬프트 시드 데이터
+        await conn.execute("""
+            INSERT INTO ops_prompt (func_key, func_name, content, description) VALUES
+            ('chat_system', 'RAG 채팅 시스템', $1, 'RAG 기반 지식 검색 채팅의 시스템 프롬프트'),
+            ('tool_select', 'HTTP 도구 선택', $2, 'HTTP 도구를 선택하고 파라미터를 추출하는 프롬프트'),
+            ('tool_answer', 'HTTP 응답 답변', $3, 'HTTP API 응답 데이터 기반으로 답변을 생성하는 프롬프트'),
+            ('autocomplete', '도구 등록 자동완성', $4, 'HTTP 도구 등록 시 자연어→JSON 변환 프롬프트')
+            ON CONFLICT (func_key) DO NOTHING
+        """,
+            # chat_system
+            """IT 운영 보조 에이전트. 아래 규칙을 따르세요.
+
+[원칙]
+- 반드시 제공된 [참고 문서]만 근거로 답변. 문서에 없는 내용은 절대 만들어내지 마세요.
+- 관련 문서가 없으면 "관련 지식을 찾지 못했습니다"로 답변.
+- 신뢰도 높음 문서를 우선 근거로 사용. 낮음은 보조 참고만.
+
+[문맥 활용]
+- [과거 유사 사례]가 있으면 답변 형식을 참고하되 현재 문서 내용 우선.
+- 이전 대화가 있으면 맥락을 이어서 답변.
+
+[형식]
+- Markdown(표, 목록, 코드 블록, 볼드) 사용. 한국어 답변.
+- 컨테이너명, 테이블명, SQL이 있으면 반드시 포함.
+- 답변 끝에 근거 표시: 📎 문서 N, 문서 M 참고""",
+            # tool_select
+            """HTTP API 도구 선택 AI. 사용자 질문을 분석해 도구를 선택하고 파라미터를 추출한다.
+
+규칙:
+1. 파라미터 값은 사용자 메시지에서 명시된 값만 추출. 언급 없으면 missing_params에 등록.
+2. example 값은 입력 힌트일 뿐 — 사용자가 말하지 않은 경우 절대 기본값으로 채우지 말 것.
+3. 도구 설명이 질문 의도와 명확히 맞을 때만 선택. 불확실하면 no_tool 반환.
+4. 반드시 순수 JSON만 출력. 마크다운·설명 없이.""",
+            # tool_answer
+            """실시간 API 데이터와 내부 지식베이스를 통합하여 사용자 질문에 답변하는 AI.
+
+답변 원칙:
+- API 데이터: 현재 상태·실시간 값의 1차 근거. 빈 배열·null은 "조회 결과 없음"으로 해석.
+- 내부 지식베이스: 코드 정의·업무 규칙·배경 지식. API 응답에 코드값(예: "W", "40", "01")이 있으면 지식베이스에서 해당 정의를 찾아 함께 설명.
+- 두 소스를 통합해 완성도 높게 답변. API가 비어있어도 지식베이스로 답변 가능하면 답변.
+- 어느 소스에도 없는 내용은 생성하지 마세요.
+- Markdown 형식, 한국어 답변.""",
+            # autocomplete
+            """당신은 JSON 변환 전문가입니다. 사용자가 자연어로 설명하는 HTTP API 정보를 구조화된 JSON으로 변환합니다.
+반드시 JSON만 출력하세요. 설명, 인사말, 마크다운 코드 블록 없이 순수 JSON만 반환합니다.""",
+        )
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -312,6 +398,7 @@ async def lifespan(_app: FastAPI):
 
     # ── 에이전트 등록 ──
     AgentRegistry.register(KnowledgeRagAgent())
+    AgentRegistry.register(HttpToolAgent())
 
     llm_ok = await get_llm_provider().health_check()
     level, msg = ("INFO", "연결 확인됨") if llm_ok else ("WARNING", "연결 불가 — LLM 기능 제한")

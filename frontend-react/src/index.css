@@ -238,6 +238,12 @@ body {
 [data-theme="light"] ::-webkit-scrollbar-thumb { background: rgb(203 213 225); }
 [data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: rgb(148 163 184); }
 
+/* ── Light mode: input/textarea text color ── */
+[data-theme="light"] input,
+[data-theme="light"] textarea {
+  color: rgb(var(--body-text));
+}
+
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 .typing-cursor::after {
   content: '▋';

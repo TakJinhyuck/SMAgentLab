@@ -144,12 +144,13 @@ export interface ChatMessage {
   question?: string;
   has_feedback?: boolean;
   messageId?: number;
+  toolError?: string | null;
 }
 
 // SSE Event types
 export interface SSEStatusEvent {
   type: 'status';
-  step: 'embedding' | 'context' | 'search' | 'llm';
+  step: 'embedding' | 'context' | 'search' | 'llm' | 'tool_select' | 'http_call';
   message: string;
 }
 
@@ -170,17 +171,25 @@ export interface SSEDoneEvent {
   message_id?: number;
 }
 
-export type SSEEvent = SSEStatusEvent | SSEMetaEvent | SSETokenEvent | SSEDoneEvent;
+export type SSEEvent = SSEStatusEvent | SSEMetaEvent | SSETokenEvent | SSEDoneEvent | SSEToolRequestEvent | SSEToolResultEvent | SSEToolErrorEvent;
 
 // Chat request
+export interface ApprovedTool {
+  tool_id: number;
+  params: Record<string, string>;
+}
+
 export interface ChatRequest {
   namespace: string;
   question: string;
+  agentType?: string;
   wVector?: number;
   wKeyword?: number;
   topK?: number;
   conversationId?: number | null;
   category?: string | null;
+  approvedTool?: ApprovedTool | null;
+  selectedToolId?: number | null;
   signal?: AbortSignal;
 }
 
@@ -270,6 +279,80 @@ export interface GlobalStats {
     glossary_count: number;
   }>;
   unresolved_cases: Array<{ namespace: string; question: string; created_at: string }>;
+}
+
+// HTTP Tool types
+export interface HttpToolParam {
+  name: string;
+  type: string;
+  required: boolean;
+  description: string;
+  example?: string | null;
+}
+
+export interface HttpTool {
+  id: number;
+  namespace: string;
+  name: string;
+  description: string;
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  param_schema: HttpToolParam[];
+  response_example: Record<string, unknown> | null;
+  timeout_sec: number;
+  max_response_kb: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface HttpToolCreatePayload {
+  namespace: string;
+  name: string;
+  description: string;
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  param_schema: HttpToolParam[];
+  response_example?: Record<string, unknown> | null;
+  timeout_sec?: number;
+  max_response_kb?: number;
+}
+
+export interface HttpToolUpdatePayload {
+  name?: string;
+  description?: string;
+  method?: string;
+  url?: string;
+  headers?: Record<string, string>;
+  param_schema?: HttpToolParam[];
+  response_example?: Record<string, unknown> | null;
+  timeout_sec?: number;
+  max_response_kb?: number;
+}
+
+// SSE Tool events
+export interface SSEToolRequestEvent {
+  type: 'tool_request';
+  action: 'confirm' | 'missing_params' | 'no_tool_needed' | 'no_tools';
+  tool_id?: number;
+  tool_name?: string;
+  tool_url?: string;
+  params?: Record<string, string>;
+  missing_params?: string[];
+  param_schema?: HttpToolParam[];
+  tools?: Array<{ id: number; name: string; description: string }>;
+  message?: string;
+}
+
+export interface SSEToolResultEvent {
+  type: 'tool_result';
+  data: string;
+}
+
+export interface SSEToolErrorEvent {
+  type: 'tool_error';
+  message: string;
 }
 
 // Debug search types

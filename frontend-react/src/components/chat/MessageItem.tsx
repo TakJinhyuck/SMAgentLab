@@ -1,5 +1,5 @@
 import { clsx } from 'clsx';
-import { Bot, User } from 'lucide-react';
+import { Bot, User, AlertTriangle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -63,6 +63,14 @@ export function MessageItem({ message, namespace }: MessageItemProps) {
                   index={idx}
                 />
               ))}
+            </div>
+          )}
+
+          {/* Tool error banner */}
+          {message.toolError && (
+            <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-500/15 border border-amber-500/40 rounded-lg px-3 py-2">
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>{message.toolError}</span>
             </div>
           )}
 

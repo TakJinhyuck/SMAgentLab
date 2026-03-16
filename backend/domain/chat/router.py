@@ -243,7 +243,7 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
     msg_id = await _pre_create_assistant_message(conv_id, None, [])
 
     # ── AgentRegistry를 통한 위임 ──
-    agent = AgentRegistry.get("knowledge_rag")
+    agent = AgentRegistry.get(req.agent_type)
     agent_context = {
         "namespace": req.namespace,
         "msg_id": msg_id,
@@ -254,6 +254,11 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
         "inhouse_conv_id": inhouse_conv_id,
         "category": req.category,
     }
+    # HTTP 도구 승인 정보가 있으면 컨텍스트에 추가
+    if req.approved_tool:
+        agent_context["approved_tool"] = req.approved_tool.model_dump()
+    if req.selected_tool_id:
+        agent_context["selected_tool_id"] = req.selected_tool_id
 
     async def event_generator():
         yield _sse({
@@ -265,6 +270,23 @@ async def chat_stream(req: ChatRequest, user: dict = Depends(get_current_user)):
                 yield _sse(event)
         except (asyncio.CancelledError, GeneratorExit):
             pass
+        except Exception as e:
+            logger.error("SSE event_generator 에러: %s", e, exc_info=True)
+        finally:
+            # 안전장치: generating 상태로 남은 메시지를 completed로 전환
+            try:
+                async with get_conn() as conn:
+                    row = await conn.fetchrow(
+                        "SELECT status, content FROM ops_message WHERE id = $1", msg_id,
+                    )
+                if row and row["status"] == "generating":
+                    content = row["content"]
+                    if not content or not content.strip():
+                        await update_assistant_message(msg_id, "[연결이 끊어졌습니다.]", "completed")
+                    else:
+                        await update_assistant_message(msg_id, content, "completed")
+            except Exception:
+                logger.warning("메시지 상태 정리 실패: msg_id=%s", msg_id, exc_info=True)
 
     return StreamingResponse(
         event_generator(),

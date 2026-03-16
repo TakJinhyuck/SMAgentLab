@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { clsx } from 'clsx';
-import { Database, BookOpen, BarChart2, Search, Layers, Zap, Settings, Users } from 'lucide-react';
+import { Database, BookOpen, BarChart2, Search, Layers, Zap, Settings, Users, Globe } from 'lucide-react';
 import { NamespaceManager } from '../components/admin/NamespaceManager';
 import { KnowledgeTable } from '../components/admin/KnowledgeTable';
 import { GlossaryTable } from '../components/admin/GlossaryTable';
@@ -9,9 +9,10 @@ import { DebugPanel } from '../components/admin/DebugPanel';
 import { FewshotTable } from '../components/admin/FewshotTable';
 import { LLMSettings } from '../components/admin/LLMSettings';
 import { UserManager } from '../components/admin/UserManager';
+import { HttpToolManager } from '../components/admin/HttpToolManager';
 import { useAuthStore } from '../store/useAuthStore';
 
-type TabId = 'namespaces' | 'knowledge' | 'glossary' | 'fewshots' | 'stats' | 'debug' | 'llm' | 'users';
+type TabId = 'namespaces' | 'knowledge' | 'glossary' | 'fewshots' | 'http_tools' | 'stats' | 'debug' | 'llm' | 'users';
 
 interface Tab {
   id: TabId;
@@ -25,6 +26,7 @@ const TABS: Tab[] = [
   { id: 'knowledge', label: '지식 베이스', icon: <BookOpen className="w-4 h-4" /> },
   { id: 'glossary', label: '용어집', icon: <Database className="w-4 h-4" /> },
   { id: 'fewshots', label: 'Few-shot', icon: <Zap className="w-4 h-4" /> },
+  { id: 'http_tools', label: 'HTTP 도구', icon: <Globe className="w-4 h-4" /> },
   { id: 'stats', label: '통계', icon: <BarChart2 className="w-4 h-4" /> },
   { id: 'debug', label: '파이프라인 디버그', icon: <Search className="w-4 h-4" /> },
   { id: 'llm', label: '시스템 설정', icon: <Settings className="w-4 h-4" /> },
@@ -67,6 +69,7 @@ export default function Admin() {
         {activeTab === 'knowledge' && <KnowledgeTable />}
         {activeTab === 'glossary' && <GlossaryTable />}
         {activeTab === 'fewshots' && <FewshotTable />}
+        {activeTab === 'http_tools' && <HttpToolManager />}
         {activeTab === 'stats' && <StatsPanel />}
         {activeTab === 'debug' && <DebugPanel onNavigate={setActiveTab} />}
         {activeTab === 'llm' && <LLMSettings />}

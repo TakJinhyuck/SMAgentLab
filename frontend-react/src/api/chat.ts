@@ -2,15 +2,22 @@ import { streamSSE, apiFetch } from './client';
 import type { SSEEvent, ChatRequest, DebugSearchRequest, DebugSearchResponse } from '../types';
 
 export function streamChat(params: ChatRequest): AsyncGenerator<SSEEvent> {
-  const body = {
+  const body: Record<string, unknown> = {
     namespace: params.namespace,
     question: params.question,
+    agent_type: params.agentType ?? 'knowledge_rag',
     w_vector: params.wVector,
     w_keyword: params.wKeyword,
     top_k: params.topK,
     conversation_id: params.conversationId ?? null,
     category: params.category ?? null,
   };
+  if (params.approvedTool) {
+    body.approved_tool = params.approvedTool;
+  }
+  if (params.selectedToolId) {
+    body.selected_tool_id = params.selectedToolId;
+  }
   return streamSSE('/chat/stream', body, params.signal);
 }
 
