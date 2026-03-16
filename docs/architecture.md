@@ -75,7 +75,7 @@ backend/
 │   ├── knowledge_rag/
 │   │   └── agent.py     #   KnowledgeRagAgent — 하이브리드 검색 + LLM 스트리밍
 │   └── http_tool/
-│       └── agent.py     #   HttpToolAgent — 외부 API 연동 (3-case 플로우 + RAG 통합)
+│       └── agent.py     #   HttpToolAgent — 외부 API 연동 (3-case 플로우 + RAG 통합, _coerce_params 타입 변환)
 ├── core/
 │   ├── config.py        # 환경변수 기반 설정 (pydantic-settings, JWT·Fernet 키 포함)
 │   ├── database.py      # asyncpg 커넥션 풀 관리 + resolve_namespace_id() 공통 헬퍼
@@ -108,6 +108,9 @@ backend/
 │   │   ├── schemas.py   #   NamespaceDetail, StatsResponse, LLMConfigRequest 등
 │   │   ├── service.py   #   네임스페이스 관리, 통계 집계
 │   │   └── router.py    #   /api/namespaces/*, /api/stats/*, /api/llm/*
+│   ├── prompt/          # 프롬프트 관리
+│   │   ├── loader.py    #   get_prompt(key, fallback) — DB 우선, 없으면 fallback
+│   │   └── router.py    #   /api/prompts/* (Admin UI에서 편집)
 │   └── llm/             # LLM Provider
 │       ├── base.py      #   LLMProvider 추상 클래스 + build_messages()
 │       ├── ollama.py    #   OllamaProvider — /api/chat (multi-turn messages 배열)

@@ -5,14 +5,19 @@
 ## Phase 1 — MVP (현재 진행)
 
 ### 완료 항목
-- [ ] DB 테이블 `ops_http_tool` + 마이그레이션
-- [ ] Backend CRUD API (`/api/http-tools`)
-- [ ] LLM 자동완성 등록 API (자연어 → 구조화된 도구 정의)
-- [ ] HttpToolAgent 구현 (도구 선택 → 파라미터 검증 → 승인 → HTTP 호출 → 응답 삽입)
-- [ ] Frontend 어드민 UI (도구 등록/수정/삭제/on·off 토글)
-- [ ] Frontend 채팅 UI (도구 승인/거절/파라미터 입력)
-- [ ] 도구별 타임아웃 설정 (기본 10초)
-- [ ] 응답 크기 제한 (`max_response_kb`, 기본 50KB)
+- [x] DB 테이블 `ops_http_tool` + 마이그레이션
+- [x] Backend CRUD API (`/api/http-tools`)
+- [x] LLM 자동완성 등록 API (자연어 → 구조화된 도구 정의)
+- [x] HttpToolAgent 구현 (도구 선택 → 파라미터 검증 → 승인 → HTTP 호출 → 응답 삽입)
+- [x] Frontend 어드민 UI (도구 등록/수정/삭제/on·off 토글)
+- [x] Frontend 채팅 UI (도구 승인/거절/파라미터 입력)
+- [x] 도구별 타임아웃 설정 (기본 10초)
+- [x] 응답 크기 제한 (`max_response_kb`, 기본 50KB)
+- [x] param_schema 타입 기반 자동 변환 (`_coerce_params`: string→number/boolean/array)
+- [x] 선택 파라미터 example 기본값 자동 채움 (`_buildInitialValues`)
+- [x] 필수 파라미터 미입력 시 승인 버튼 비활성화 (param_schema 기반)
+- [x] Case 2 (직접 선택) LLM 추출 제거 → 항상 파라미터 폼 표시
+- [x] RAG 컨텍스트 통합 (HTTP 응답 + 지식베이스 병렬 검색 → LLM 통합 답변)
 
 ### 핵심 플로우
 
