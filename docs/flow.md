@@ -637,6 +637,48 @@ provider.health_check()         (연결 확인)
 컨테이너 재시작 시 .env 설정으로 복귀
 ```
 
+---
+
+## 10. HTTP 도구 에이전트 플로우
+
+`agent_type=http_tool` 로 요청 시 `HttpToolAgent`가 처리. 3가지 진입 케이스.
+
+```
+Case 3 — 첫 진입 (approved_tool·selected_tool_id 없음)
+  ① _fetch_active_tools (네임스페이스 활성 도구 목록)
+  ② _select_tool → LLM이 도구 선택 + 파라미터 추출
+  ③ SSE: tool_request 이벤트 emit → 스트림 종료
+      action=confirm        → 파라미터 완성, 사용자 승인 대기
+      action=missing_params → 필수 파라미터 누락, 사용자 입력 대기
+      action=no_tool_needed → LLM이 도구 불필요 판단, 직접 선택 or 폴백
+      action=no_tools       → 활성 도구 없음
+
+Case 2 — 사용자가 도구 직접 선택 (selected_tool_id 포함)
+  ① 해당 도구만 로드
+  ② _select_tool → 해당 도구에 대해서만 파라미터 추출
+  ③ SSE: tool_request 이벤트 (confirm or missing_params) → 스트림 종료
+
+Case 1 — 승인된 도구 실행 (approved_tool 포함)
+  ① DB에서 도구 정보 로드
+  ② asyncio.gather(_execute_http_call, _build_rag_context) 병렬 실행
+  ③ HTTP 성공:
+      SSE: tool_result (응답 미리보기)
+      LLM 프롬프트 = API 응답 데이터 + ## 참고 문서(RAG) + 사용자 질문
+      → 스트리밍 답변
+  ④ HTTP 실패:
+      SSE: tool_error (사용자에게 실패 알림)
+      LLM 프롬프트 = RAG 컨텍스트만 (도구 정보 제외)
+      → 스트리밍 답변 (도구 실패 사실은 LLM이 알지 못함)
+```
+
+**프론트엔드 ToolRequestCard 동작:**
+- `confirm` / `missing_params`: 파라미터 입력 후 승인 → `approved_tool` 포함 재요청
+- "다른 도구로 변경" 버튼: `selected_tool_id` 포함 재요청 → Case 2 진입
+- "도구 없이 진행" (`no_tool_needed`): `knowledge_rag` 에이전트로 폴백 재요청
+- "취소": 스트림 상태 초기화
+
+---
+
 ### 환경변수 기반 전환 (영구 적용)
 
 ```

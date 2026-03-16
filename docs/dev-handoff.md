@@ -17,15 +17,13 @@ docker compose up --build -d
 
 ## 현재 작업 상태
 
-> **마지막 업데이트**: 2026-03-13
+> **마지막 업데이트**: 2026-03-16
 > **브랜치**: dev_0
-> **최근 변경**: HTTP 도구 에이전트 안정화 + ToolRequestCard UX 개선
+> **최근 변경**: HTTP 도구 채팅 타입 불일치 버그 수정 + 파라미터 폼 범용화
 
 ### 진행 중 / 미완료
 
-- [ ] **ToolRequestCard 레이아웃 확인**: 세로 레이아웃으로 수정 후 배포 완료 — Ctrl+F5 후 동작 확인 필요
 - [ ] **400 에러 원인 확인**: 유저가 400 에러 보고했으나 백엔드 로그는 모두 200 OK. 브라우저 Network 탭에서 재현 확인 필요
-- [ ] **HTTP 도구 E2E 테스트**: 도구 선택 → 파라미터 입력/승인 → HTTP 호출 → LLM 답변 전체 플로우 검증
 
 ### 백로그
 
@@ -48,7 +46,9 @@ docker compose up --build -d
 | 항목 | 내용 |
 |------|------|
 | **AgentRegistry 패턴** | `chat_stream` → `AgentRegistry.get("knowledge_rag").stream_chat()` 위임. 새 에이전트 추가 시 `agents/` 하위 모듈 + Registry 등록만으로 완결 |
-| **HTTP 도구 에이전트 플로우** | Case 1(첫 진입): tool_fetch → tool_select(LLM) → tool_params → `tool_request` SSE 이벤트 → 프론트 ToolRequestCard 표시 → 사용자 승인/거절. Case 2(승인 후): tool_load → http_call → llm_answer → done. `tool_request` 이벤트로 스트림 일시 중단, 프론트에서 재요청 시 `approved_tool` 포함 |
+| **HTTP 도구 에이전트 플로우** | Case 3(첫 진입): LLM 도구 선택 → `tool_request` SSE → ToolRequestCard. Case 2(`selected_tool_id`): 사용자 직접 선택 시 **LLM 추출 없이** 항상 파라미터 입력 폼 표시 (필수 없으면 confirm). Case 1(`approved_tool`): HTTP 호출 + RAG 검색 `asyncio.gather` 병렬 → LLM 프롬프트에 API 응답 + `## 참고 문서` 포함. HTTP 실패 시 `tool_error` SSE + RAG-only LLM 답변 (도구 컨텍스트 제외) |
+| **HTTP 파라미터 타입 변환** | 프론트 `Record<string,string>` → 백엔드 `_coerce_params(params, schema)` 에서 `param_schema.type` 기반으로 number/boolean/array 변환. 프론트 `_buildInitialValues`에서 `param_schema.example` 값으로 선택 파라미터 기본값 채워 전송 보장 |
+| **필수 파라미터 유효성** | `ToolRequestCard`의 승인 버튼은 `param_schema`에서 `required:true` 파라미터가 비어있으면 항상 비활성화 (`action` 타입 무관) |
 | **SSE tool_request 상태 유지** | 스트림 종료 시 `toolRequest`가 대기 중이면 `clearStreamState()` 호출 안 함. DB에는 `[추가 정보 입력 대기 중]` 등 placeholder 저장 → `convertMessages`에서 필터링 |
 | **프롬프트 관리** | `ops_prompt` 테이블 (key, content, description). `domain/prompt/loader.py`의 `get_prompt(key, fallback)` → DB 우선, 없으면 fallback. Admin UI에서 편집 가능 |
 | **공유 헬퍼** | `domain/chat/helpers.py` — 에이전트·라우터 양쪽에서 사용하는 DB 헬퍼 (메시지 업데이트, 쿼리로그, 클린업 등) |
@@ -67,7 +67,9 @@ docker compose up --build -d
 
 ## 완료 이력 (최근순)
 
-- **HTTP 도구 에이전트 안정화** (2026-03-13): ToolRequestCard SSE tool_request 이벤트 정상 처리 (clearStreamState 방지), DB placeholder 메시지 필터링, no_tool_needed 폴백 UX, asyncpg JSONB 문자열 파싱, SSE 401 토큰 리프레시, router finally 안전장치, 프롬프트 관리 시스템 (`backend/domain/prompt/`), LLM system_prompt 지원
+- **HTTP 도구 채팅 버그 수정** (2026-03-16): 채팅↔관리자 패널 타입 불일치 수정 (`_coerce_params`: string→number/boolean/array), 선택 파라미터 기본값 미전송 수정 (`_buildInitialValues`: `param_schema.example` 기본값 채움), Case 2 파라미터 폼 항상 표시 (LLM 추출 제거), 필수 파라미터 유효성 검사 강화 (`param_schema` 기반으로 `confirm` 액션도 비활성화)
+- **HTTP 도구 에이전트 고도화** (2026-03-16): RAG 컨텍스트 통합(`## 참고 문서` in LLM prompt), HTTP 호출+RAG 검색 `asyncio.gather` 병렬화, HTTP 실패 시 RAG-only 폴백(도구 컨텍스트 제외), 도구 재선택 플로우(`selected_tool_id` Case 2), 라이트모드 input 글씨 색상 수정(`index.css`), router finally 중복 DB 쿼리 통합
+- **HTTP 도구 에이전트 안정화** (2026-03-13): ToolRequestCard SSE tool_request 이벤트 정상 처리, DB placeholder 메시지 필터링, no_tool_needed 폴백 UX, asyncpg JSONB 파싱, SSE 401 토큰 리프레시, 프롬프트 관리 시스템(`backend/domain/prompt/`)
 - **HTTP 도구 시스템 MVP** (2026-03-12): `agents/http_tool/agent.py` HTTP Tool 에이전트, `ops_http_tool` 테이블, HttpToolManager 관리 UI, DebugPanel HTTP 도구 통합, ToolRequestCard 승인/거절 UI
 - **백엔드 클린 코드 리팩토링**: `inhouse.py` critical 버그 수정 (`_extract_ext_conversation_id` 미정의 → `_extract_session`), `resolve_namespace_id` 공통 헬퍼 통합 (중복 11곳 제거), 응답 형식 통일 (`ok`→`status`), 중복 except 정리, DB 인덱스 6개 추가
 - **디버그 패널 용어 매핑 색상 수정**: `bg-slate-100` → `bg-zinc-100` (라이트모드 slate 역전 이슈)

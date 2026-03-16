@@ -21,6 +21,7 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[int] = None
     category: Optional[str] = None
     approved_tool: Optional[ApprovedTool] = None
+    selected_tool_id: Optional[int] = None
 
 
 class KnowledgeResult(BaseModel):

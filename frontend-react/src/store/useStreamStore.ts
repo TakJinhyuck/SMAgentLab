@@ -59,6 +59,7 @@ export function startChatStream(params: {
   conversationId: number | null;
   category?: string | null;
   approvedTool?: { tool_id: number; params: Record<string, string> } | null;
+  selectedToolId?: number | null;
   onConversationCreated: (id: number) => void;
 }) {
   // Abort any existing stream & detach controller so old _runStream can't mutate state
@@ -137,6 +138,7 @@ async function _runStream(
     conversationId: number | null;
     category?: string | null;
     approvedTool?: { tool_id: number; params: Record<string, string> } | null;
+    selectedToolId?: number | null;
     onConversationCreated: (id: number) => void;
   },
   controller: AbortController,
@@ -165,6 +167,7 @@ async function _runStream(
       conversationId: params.conversationId,
       category: params.category,
       approvedTool: params.approvedTool ?? null,
+      selectedToolId: params.selectedToolId ?? null,
       signal: controller.signal,
     });
 
@@ -211,7 +214,8 @@ async function _runStream(
       } else if (event.type === 'tool_error') {
         const msg = (event as { message: string }).message;
         set({ toolError: msg });
-        updateLastMessage((m) => ({ ...m, content: `[도구 오류: ${msg}]`, isStreaming: false }));
+        updateLastMessage((m) => ({ ...m, toolError: msg }));
+        // isStreaming 유지 — HTTP 실패 후 RAG 기반 LLM 답변이 이어짐
       } else if (event.type === 'done') {
         const msgId = (event as { type: 'done'; message_id?: number }).message_id;
         updateLastMessage((m) => ({ ...m, isStreaming: false, messageId: msgId }));

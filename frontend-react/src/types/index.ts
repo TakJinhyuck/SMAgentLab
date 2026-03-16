@@ -144,6 +144,7 @@ export interface ChatMessage {
   question?: string;
   has_feedback?: boolean;
   messageId?: number;
+  toolError?: string | null;
 }
 
 // SSE Event types
@@ -188,6 +189,7 @@ export interface ChatRequest {
   conversationId?: number | null;
   category?: string | null;
   approvedTool?: ApprovedTool | null;
+  selectedToolId?: number | null;
   signal?: AbortSignal;
 }
 

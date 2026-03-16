@@ -310,7 +310,14 @@ export function ChatContainer() {
             if (epoch === loadEpochRef.current &&
                 useAppStore.getState().conversationId === finishedConvId) {
               historyConvIdRef.current = finishedConvId;
-              setHistoryMessages(convertMessages(msgs));
+              const converted = convertMessages(msgs);
+              // toolError는 DB에 저장 안 됨 — 스트림 메시지에서 마지막 assistant 기준으로 복원
+              const streamMsgs = useStreamStore.getState().messages;
+              const lastStreamErr = [...streamMsgs].reverse().find(m => m.role === 'assistant' && m.toolError);
+              if (lastStreamErr?.toolError && converted.length > 0 && converted[converted.length - 1].role === 'assistant') {
+                converted[converted.length - 1] = { ...converted[converted.length - 1], toolError: lastStreamErr.toolError };
+              }
+              setHistoryMessages(converted);
             }
           })
           .catch(console.error)
@@ -444,6 +451,27 @@ export function ChatContainer() {
                 conversationId,
                 category: category || null,
                 approvedTool: { tool_id: toolId, params },
+                onConversationCreated: (id) => {
+                  if (!useStreamStore.getState().active) return;
+                  const currentConvId = useAppStore.getState().conversationId;
+                  if (currentConvId !== id) setConversationId(id);
+                },
+              });
+            }}
+            onSelectTool={(toolId) => {
+              useStreamStore.setState({ toolRequest: null });
+              // 사용자가 직접 선택한 도구로 파라미터 추출 재요청
+              loadEpochRef.current++;
+              startChatStream({
+                namespace: namespace!,
+                question: [...displayMessages].reverse().find((m) => m.role === 'user')?.content || '',
+                agentType: 'http_tool',
+                wVector: searchConfig.wVector,
+                wKeyword: searchConfig.wKeyword,
+                topK: searchConfig.topK,
+                conversationId,
+                category: category || null,
+                selectedToolId: toolId,
                 onConversationCreated: (id) => {
                   if (!useStreamStore.getState().active) return;
                   const currentConvId = useAppStore.getState().conversationId;

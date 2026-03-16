@@ -5,13 +5,23 @@ import type { SSEToolRequestEvent, HttpToolParam } from '../../types';
 interface ToolRequestCardProps {
   event: SSEToolRequestEvent;
   onApprove: (toolId: number, params: Record<string, string>) => void;
+  onSelectTool: (toolId: number) => void;
   onReject: () => void;
   onFallback?: () => void;
 }
 
-export function ToolRequestCard({ event, onApprove, onReject, onFallback }: ToolRequestCardProps) {
-  const [editParams, setEditParams] = useState<Record<string, string>>(event.params || {});
-  const [missingFilled, setMissingFilled] = useState<Record<string, string>>({});
+function _buildInitialValues(event: SSEToolRequestEvent): Record<string, string> {
+  const base: Record<string, string> = { ...(event.params || {}) };
+  for (const p of (event.param_schema || [])) {
+    if (!(p.name in base) && p.example !== undefined && p.example !== null) {
+      base[p.name] = String(p.example);
+    }
+  }
+  return base;
+}
+
+export function ToolRequestCard({ event, onApprove, onSelectTool, onReject, onFallback }: ToolRequestCardProps) {
+  const [paramValues, setParamValues] = useState<Record<string, string>>(() => _buildInitialValues(event));
 
   // ── 활성 도구 없음 ──
   if (event.action === 'no_tools') {
@@ -43,7 +53,7 @@ export function ToolRequestCard({ event, onApprove, onReject, onFallback }: Tool
               {event.tools.map((t) => (
                 <button
                   key={t.id}
-                  onClick={() => onApprove(t.id, {})}
+                  onClick={() => onSelectTool(t.id)}
                   className="w-full flex items-center gap-2 text-left bg-slate-900 hover:bg-slate-700/60 border border-slate-700 hover:border-emerald-700/50 rounded-lg px-3 py-2 transition-colors"
                 >
                   <Globe className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
@@ -80,17 +90,32 @@ export function ToolRequestCard({ event, onApprove, onReject, onFallback }: Tool
     );
   }
 
-  // ── 파라미터 누락 / 실행 확인 ──
+  // ── 파라미터 입력 / 실행 확인 ──
   const isMissing = event.action === 'missing_params';
   const missingParams = event.missing_params || [];
+  const paramSchema: HttpToolParam[] = event.param_schema || [];
+
+  // param_schema가 있으면 전체 파라미터 목록 사용, 없으면 기존 params 키 사용
+  const allParamKeys: string[] = paramSchema.length > 0
+    ? paramSchema.map((p) => p.name)
+    : [...new Set([...Object.keys(event.params || {}), ...missingParams])];
+
+  const requiredParamNames = paramSchema.length > 0
+    ? paramSchema.filter((p) => p.required).map((p) => p.name)
+    : missingParams;
 
   const handleApprove = () => {
     if (!event.tool_id) return;
-    const finalParams = { ...editParams, ...missingFilled };
-    const stillMissing = missingParams.filter((p) => !finalParams[p]?.trim());
+    const stillMissing = requiredParamNames.filter((p) => !paramValues[p]?.trim());
     if (stillMissing.length > 0) return;
+    // 빈 값 제외하고 전송
+    const finalParams = Object.fromEntries(
+      Object.entries(paramValues).filter(([, v]) => v?.trim())
+    );
     onApprove(event.tool_id, finalParams);
   };
+
+  const isRequiredMissing = requiredParamNames.some((p) => !paramValues[p]?.trim());
 
   return (
     <div className={`bg-slate-800 border ${isMissing ? 'border-amber-700/50' : 'border-emerald-800/50'} rounded-lg p-4 my-2 ml-9`}>
@@ -102,12 +127,12 @@ export function ToolRequestCard({ event, onApprove, onReject, onFallback }: Tool
           <Globe className="w-4 h-4 text-emerald-400 flex-shrink-0" />
         )}
         <span className="text-sm font-medium text-white">
-          {isMissing ? '추가 정보를 입력해주세요' : '도구를 실행할까요?'}
+          {isMissing ? '파라미터를 입력해주세요' : '도구를 실행할까요?'}
         </span>
       </div>
       <p className="text-xs text-slate-400 mb-3 ml-6">
         {isMissing
-          ? `${event.tool_name} 도구를 실행하려면 아래 항목을 입력해야 합니다.`
+          ? `${event.tool_name} 도구 실행에 필요한 값을 입력하세요. 선택 항목은 비워둘 수 있습니다.`
           : `${event.tool_name} 도구를 아래 파라미터로 실행합니다. 확인 후 승인해주세요.`}
       </p>
 
@@ -119,64 +144,53 @@ export function ToolRequestCard({ event, onApprove, onReject, onFallback }: Tool
         </div>
         <p className="text-[10px] text-slate-500 font-mono mb-3 break-all leading-relaxed">{event.tool_url}</p>
 
-        {/* 파라미터 — 세로 레이아웃 (label 위, input 아래) */}
+        {/* 전체 파라미터 — required/optional 모두 표시 */}
         <div className="space-y-2.5">
-          {Object.entries(editParams).map(([key, value]) => {
-            const isThisMissing = missingParams.includes(key);
+          {allParamKeys.map((key, idx) => {
+            const isRequired = missingParams.includes(key);
+            const schemaParam = paramSchema.find((p) => p.name === key);
+            const isOptional = schemaParam ? !schemaParam.required : !isRequired;
             return (
               <div key={key}>
-                <label className={`block text-xs font-mono mb-1 ${isThisMissing ? 'text-amber-400' : 'text-slate-400'}`}>
-                  {key} {isThisMissing && <span className="text-amber-500 text-[10px]">(필수)</span>}
+                <label className={`block text-xs font-mono mb-1 ${isRequired ? 'text-amber-400' : 'text-slate-400'}`}>
+                  {key}{' '}
+                  {isRequired
+                    ? <span className="text-amber-500 text-[10px]">(필수)</span>
+                    : isOptional
+                      ? <span className="text-slate-500 text-[10px]">(선택)</span>
+                      : null}
                 </label>
-                {isThisMissing ? (
-                  <input
-                    value={missingFilled[key] || ''}
-                    onChange={(e) => setMissingFilled((f) => ({ ...f, [key]: e.target.value }))}
-                    placeholder={_getParamHint(key, event.param_schema)}
-                    className="w-full bg-slate-800 border border-amber-600/50 rounded px-2.5 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none placeholder-slate-600"
-                    autoFocus
-                  />
-                ) : (
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-800/50 rounded">
-                    <span className="text-sm text-white font-mono break-all">{value}</span>
-                    <span className="text-emerald-400 text-xs flex-shrink-0">&#10003;</span>
-                  </div>
-                )}
+                <input
+                  value={paramValues[key] || ''}
+                  onChange={(e) => setParamValues((p) => ({ ...p, [key]: e.target.value }))}
+                  placeholder={_getParamHint(key, paramSchema)}
+                  className={`w-full bg-slate-800 rounded px-2.5 py-1.5 text-sm text-white focus:outline-none placeholder-slate-600 border ${
+                    isRequired
+                      ? 'border-amber-600/50 focus:border-emerald-500'
+                      : 'border-slate-600 focus:border-slate-400'
+                  }`}
+                  autoFocus={idx === 0}
+                />
               </div>
             );
           })}
-
-          {/* 누락 파라미터 중 editParams에 없는 것들 */}
-          {missingParams.filter((p) => !(p in editParams)).map((key, idx) => (
-            <div key={key}>
-              <label className="block text-xs font-mono text-amber-400 mb-1">
-                {key} <span className="text-amber-500 text-[10px]">(필수)</span>
-              </label>
-              <input
-                value={missingFilled[key] || ''}
-                onChange={(e) => setMissingFilled((f) => ({ ...f, [key]: e.target.value }))}
-                placeholder={_getParamHint(key, event.param_schema)}
-                className="w-full bg-slate-800 border border-amber-600/50 rounded px-2.5 py-1.5 text-sm text-white focus:border-emerald-500 focus:outline-none placeholder-slate-600"
-                autoFocus={idx === 0}
-              />
-            </div>
-          ))}
         </div>
       </div>
 
-      {/* 전체 도구 목록 */}
-      {event.tools && event.tools.length > 0 && (
+      {/* 전체 도구 목록 — 다른 도구 선택 가능 */}
+      {event.tools && event.tools.length > 1 && (
         <div className="mb-3">
-          <p className="text-[10px] text-slate-500 mb-1">전체 도구 목록:</p>
+          <p className="text-[10px] text-slate-500 mb-1.5">다른 도구로 변경:</p>
           <div className="flex flex-wrap gap-1">
-            {event.tools.map((t) => (
-              <span key={t.id} className={`text-[10px] px-1.5 py-0.5 rounded ${
-                t.id === event.tool_id
-                  ? 'bg-emerald-900/50 text-emerald-400 font-medium'
-                  : 'bg-slate-700 text-slate-400'
-              }`}>
-                {t.id === event.tool_id ? '● ' : '○ '}{t.name}
-              </span>
+            {event.tools.filter((t) => t.id !== event.tool_id).map((t) => (
+              <button
+                key={t.id}
+                onClick={() => onSelectTool(t.id)}
+                title={t.description}
+                className="text-[10px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white transition-colors"
+              >
+                {t.name}
+              </button>
             ))}
           </div>
         </div>
@@ -186,14 +200,18 @@ export function ToolRequestCard({ event, onApprove, onReject, onFallback }: Tool
       <div className="flex gap-2">
         <button
           onClick={handleApprove}
-          disabled={isMissing && missingParams.some((p) => {
-            const val = missingFilled[p] || editParams[p];
-            return !val?.trim();
-          })}
+          disabled={isRequiredMissing}
           className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
         >
           <Check className="w-4 h-4" />
           {isMissing ? '입력 완료' : '승인'}
+        </button>
+        <button
+          onClick={onFallback ?? onReject}
+          className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors"
+        >
+          <Check className="w-4 h-4" />
+          도구없이 진행
         </button>
         <button
           onClick={onReject}
@@ -207,8 +225,7 @@ export function ToolRequestCard({ event, onApprove, onReject, onFallback }: Tool
   );
 }
 
-function _getParamHint(name: string, schema?: HttpToolParam[]): string {
-  if (!schema) return `${name} 값을 입력하세요`;
+function _getParamHint(name: string, schema: HttpToolParam[]): string {
   const param = schema.find((p) => p.name === name);
   if (!param) return `${name} 값을 입력하세요`;
   if (param.example) return `예: ${param.example}`;
