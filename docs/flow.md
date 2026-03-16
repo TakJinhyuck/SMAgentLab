@@ -655,8 +655,10 @@ Case 3 — 첫 진입 (approved_tool·selected_tool_id 없음)
 
 Case 2 — 사용자가 도구 직접 선택 (selected_tool_id 포함)
   ① 해당 도구만 로드
-  ② _select_tool → 해당 도구에 대해서만 파라미터 추출
-  ③ SSE: tool_request 이벤트 (confirm or missing_params) → 스트림 종료
+  ② LLM 추출 없이 param_schema에서 required 파라미터 목록 파악
+  ③ SSE: tool_request 이벤트 → 스트림 종료
+      required 파라미터 있음 → missing_params (파라미터 입력 폼)
+      required 파라미터 없음 → confirm (승인 카드)
 
 Case 1 — 승인된 도구 실행 (approved_tool 포함)
   ① DB에서 도구 정보 로드

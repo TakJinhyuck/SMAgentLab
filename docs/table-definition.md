@@ -24,8 +24,10 @@
 11. [ops_feedback](#11-ops_feedback)
 12. [ops_fewshot](#12-ops_fewshot)
 13. [ops_conv_summary](#13-ops_conv_summary)
-14. [트리거 및 함수](#14-트리거-및-함수)
-15. [마이그레이션](#15-마이그레이션)
+14. [ops_http_tool](#14-ops_http_tool)
+15. [ops_prompt](#15-ops_prompt)
+16. [트리거 및 함수](#16-트리거-및-함수)
+17. [마이그레이션](#17-마이그레이션)
 
 ---
 
@@ -58,11 +60,14 @@ ops_part
              ├─── ops_knowledge_category  (namespace_id FK CASCADE)
              ├─── ops_conversation        (namespace_id FK CASCADE)
              ├─── ops_feedback            (namespace_id FK CASCADE)
-             └─── ops_query_log           (namespace_id FK CASCADE)
+             ├─── ops_query_log           (namespace_id FK CASCADE)
+             └─── ops_http_tool           (namespace_id FK CASCADE)
+
+ops_prompt   (namespace 독립 — func_key 기반 전역 프롬프트 관리)
 ```
 
-**테이블 수**: 12개
-**FK 관계**: CASCADE 11건 (namespace_id 7건 + conversation 2건 + user 1건 + part 1건), SET NULL 3건
+**테이블 수**: 14개
+**FK 관계**: CASCADE 12건 (namespace_id 8건 + conversation 2건 + user 1건 + part 1건), SET NULL 3건
 
 ---
 
@@ -388,7 +393,63 @@ final_score = (w_vector * v_score + w_keyword * k_score) * (1 + base_weight)
 
 ---
 
-## 14. 트리거 및 함수
+## 14. ops_http_tool
+
+**목적**: 네임스페이스별 외부 HTTP API 도구를 관리한다. HttpToolAgent가 도구 선택·파라미터 검증·HTTP 호출에 활용한다.
+
+| # | 컬럼명 | 데이터 타입 | NULL | 기본값 | 제약조건 | 설명 |
+|---|--------|-----------|------|--------|---------|------|
+| 1 | `id` | SERIAL | NO | auto | PK | 고유 식별자 |
+| 2 | `namespace_id` | INT | NO | - | FK → ops_namespace(id) ON DELETE CASCADE | 소속 네임스페이스 ID |
+| 3 | `name` | VARCHAR(200) | NO | - | - | 도구 이름 |
+| 4 | `description` | TEXT | YES | NULL | - | 도구 설명 (LLM 도구 선택에 활용) |
+| 5 | `method` | VARCHAR(10) | NO | - | - | HTTP 메서드 (`GET` \| `POST` 등) |
+| 6 | `url` | TEXT | NO | - | - | 호출 대상 URL |
+| 7 | `headers` | JSONB | YES | NULL | - | 요청 헤더 (Authorization 등) |
+| 8 | `param_schema` | JSONB | YES | NULL | - | 파라미터 스키마 배열 (name, type, required, description, example) |
+| 9 | `response_example` | TEXT | YES | NULL | - | 응답 예시 (LLM 컨텍스트 품질 향상용) |
+| 10 | `timeout_sec` | INT | YES | `10` | - | HTTP 호출 타임아웃(초) |
+| 11 | `max_response_kb` | INT | YES | `50` | - | 응답 크기 제한(KB) |
+| 12 | `is_active` | BOOLEAN | NO | `TRUE` | - | 활성 여부 (채팅에서 비활성 도구 제외) |
+| 13 | `created_at` | TIMESTAMPTZ | NO | `NOW()` | - | 생성일시 |
+
+**param_schema 요소 구조** (JSONB 배열):
+```json
+[
+  { "name": "userId", "type": "string", "required": true, "description": "사용자 ID", "example": "U001" },
+  { "name": "limit",  "type": "number", "required": false, "description": "조회 개수", "example": "10" }
+]
+```
+`type` 값: `string` | `number` | `boolean` | `array`
+백엔드 `_coerce_params()`가 type 기반으로 string → 실제 타입 자동 변환
+
+**FK 동작**: 네임스페이스 삭제 시 CASCADE
+
+---
+
+## 15. ops_prompt
+
+**목적**: LLM 프롬프트 텍스트를 DB에서 관리한다. Admin UI에서 실시간 편집 가능하며, 코드 배포 없이 프롬프트 튜닝이 가능하다.
+
+| # | 컬럼명 | 데이터 타입 | NULL | 기본값 | 제약조건 | 설명 |
+|---|--------|-----------|------|--------|---------|------|
+| 1 | `id` | SERIAL | NO | auto | PK | 고유 식별자 |
+| 2 | `func_key` | VARCHAR(100) | NO | - | UNIQUE | 프롬프트 식별 키 |
+| 3 | `content` | TEXT | NO | - | - | 프롬프트 내용 |
+| 4 | `description` | TEXT | YES | NULL | - | 용도 설명 |
+| 5 | `updated_at` | TIMESTAMPTZ | NO | `NOW()` | - | 마지막 수정일시 |
+
+**조회 방식**: `get_prompt(func_key, fallback)` — DB에 있으면 DB 값, 없으면 코드 내 fallback 사용. 결과는 인메모리 캐시, 편집 시 자동 무효화.
+
+**주요 func_key**:
+| func_key | 설명 |
+|----------|------|
+| `tool_select` | HttpToolAgent 도구 선택 시스템 프롬프트 |
+| `tool_answer` | HTTP 응답 기반 LLM 답변 시스템 프롬프트 |
+
+---
+
+## 16. 트리거 및 함수
 
 ### update_updated_at()
 
@@ -411,7 +472,7 @@ CREATE TRIGGER trg_knowledge_updated_at
 
 ---
 
-## 15. 마이그레이션
+## 17. 마이그레이션
 
 애플리케이션 시작 시 `backend/main.py`의 `_run_migrations()`에서 자동 실행된다. 모든 마이그레이션은 멱등(idempotent)하다.
 
