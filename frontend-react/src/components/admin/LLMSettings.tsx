@@ -135,7 +135,7 @@ export function LLMSettings() {
   const [subTab, setSubTab] = useState<SubTab>('thresholds');
 
   return (
-    <div className="max-w-2xl">
+    <div className={subTab === 'prompts' ? 'max-w-5xl' : 'max-w-2xl'}>
       {/* Sub-tab bar */}
       <div className="flex gap-1 mb-6 border-b border-slate-700">
         <button
