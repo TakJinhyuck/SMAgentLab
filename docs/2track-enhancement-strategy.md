@@ -1,6 +1,6 @@
 # 2-Track AI 고도화 전략
 
-> **기준일**: 2026-03-16
+> **기준일**: 2026-03-17 (최종 업데이트)
 > **전제**: 사내 표준(MCP Protocol, LLM Provider, Auth, API Gateway)은 준수 대상이지 설계 대상이 아님.
 > 우리 팀이 **독자적으로 컨트롤하는 레이어**에서 정확도·효율화를 극대화하는 전략.
 
@@ -129,29 +129,6 @@ resolved=true는 TTL 적용 (오래된 해결 이슈 자동 정리)
 ---
 
 ### A-2. 신규 추가로 정확도를 높이는 기능
-
-#### ⑤ Re-Ranking (Cross-Encoder)
-
-**없는 이유**: 현재 단일 weighted score로 top_k 선택. LLM 관점 관련도와 점수가 불일치 가능.
-
-**설계**:
-```
-현재:
-search_knowledge(top_k=5) → build_context → LLM
-
-추가 후:
-search_knowledge(top_k=20, 후보 확대)
-  → cross_encoder.predict([(query, doc) for doc in candidates])
-  → score 상위 top_k=5만 선택
-  → build_context → LLM
-
-사용 모델: ms-marco-MiniLM-L-6-v2 (약 80MB, CPU 실행)
-적용 조건: 후보 5개 이상일 때만 (소규모 namespace는 스킵)
-```
-
-**파괴적 효과**: "점수는 높은데 실제 답변에 쓸모없는 chunk"가 걸러짐. 문서가 많아질수록 체감 정확도 차이가 커짐. 코드 변경 15줄 수준.
-
----
 
 #### ⑥ RAGAS 오프라인 품질 평가 파이프라인
 
@@ -385,12 +362,11 @@ ops_query_log 집계 분석:
 | 순위 | 기능 | 구현 규모 | 파괴적 효과 | 효과 발현 시점 |
 |------|------|-----------|-------------|----------------|
 | **1** | ~~⑩ Semantic Cache~~ ✅ | 소 (Redis + 30줄) | ★★★★★ | 즉시 |
-| **2** | ③ Few-shot 자동 학습 | 중 (테이블 + UI 탭) | ★★★★★ | 1~2개월 후 복리 |
-| **3** | ② Glossary 자동 확장 | 중 (배치 + UI 탭) | ★★★★★ | 3~4주 후 |
+| **2** | ~~③ Few-shot 라이프사이클~~ ✅ | 소 (status 컬럼 + UI) | ★★★★★ | 즉시 |
+| **3** | ~~② Glossary AI 추천~~ ✅ | 소 (LLM 호출 + 버튼 UI) | ★★★★★ | 즉시 |
 | **4** | ⑧ MCP Tool 체이닝 | 중 (스키마 + 실행 로직) | ★★★★★ | 즉시 (등록 후) |
 | **5** | ⑪ ReAct 오케스트레이터 | 대 (신규 에이전트) | ★★★★★ | 즉시 (등록 후) |
-| **6** | ~~⑤ Re-Ranking~~ ✅ | 소 (라이브러리 + 15줄) | ★★★★☆ | 즉시 |
-| **7** | ⑥ RAGAS 평가 파이프라인 | 중 (배치 + 테이블) | ★★★★☆ | 첫 실행 후 |
+| **6** | ⑥ RAGAS 평가 파이프라인 | 중 (배치 + 테이블) | ★★★★☆ | 첫 실행 후 |
 | **8** | ① 가중치 자동 학습 | 중 (배치 + config) | ★★★★☆ | 3~4주 후 |
 | **9** | ⑦ Parent-Document Retrieval | 대 (스키마 + 재인덱싱) | ★★★★☆ | 문서 이전 후 |
 | **10** | ⑨ MCP Tool 감사 로그 | 소 (테이블 + UI) | ★★★☆☆ | 즉시 |
@@ -403,16 +379,15 @@ ops_query_log 집계 분석:
 
 ### Phase 2-A — 즉시 수확 (1~2주) ✅ 완료
 
-1. **Semantic Cache** ✅ — `shared/cache.py` + Redis 컨테이너 + KnowledgeRagAgent 통합
-2. **Re-Ranking** ✅ — `shared/reranker.py` + top_k*4 후보 확보 후 재정렬 + Dockerfile 선택적 모델 다운로드
-3. **MCP Tool 감사 로그** — `ops_mcp_tool_log` 테이블 + Tool 호출 후 로그 저장
+1. **Semantic Cache** ✅ — `shared/cache.py` + Redis 컨테이너 + KnowledgeRagAgent 통합 + 어드민 캐시 현황 UI (`CachePanel.tsx`: 통계·목록·초기화)
+2. **MCP Tool 감사 로그** — `ops_mcp_tool_log` 테이블 + Tool 호출 후 로그 저장
 
-### Phase 2-B — 지식 자산 자동화 (1~2개월)
+### Phase 2-B — 지식 자산 자동화 (1~2개월) ✅ 일부 완료
 
 > 운영할수록 AI가 똑똑해지는 구조 구축
 
-4. **Few-shot 자동 학습** — `ops_fewshot_candidate` 테이블 + 피드백 연동 + 어드민 승인 탭
-5. **Glossary 자동 확장** — 미매핑 질문 배치 분석 + 어드민 "용어 추천" 탭
+4. **Few-shot 라이프사이클** ✅ — `ops_fewshot.status` 컬럼 (active/candidate) + 피드백 시 candidate로 저장 + 어드민 status 필터·활성화/후보 전환 UI
+5. **Glossary AI 추천** ✅ — 미매핑 질문 on-demand LLM 분석 + 어드민 "AI 용어 추천" 버튼 + 1-click 등록 + 조회 한도 어드민 UI에서 설정 가능(기본 50건, 최대 200건)
 6. **가중치 자동 학습** — `ops_namespace_config` 테이블 + 주간 배치 최적화
 
 ### Phase 2-C — 품질·인사이트 가시화 (2~3개월)

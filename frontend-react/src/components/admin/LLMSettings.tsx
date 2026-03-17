@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Cpu, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Save, FlaskConical, SlidersHorizontal, KeyRound, ChevronDown, MessageSquareText } from 'lucide-react';
 import { getLLMConfig, updateLLMConfig, testLLMConnection, getSearchThresholds, updateSearchThresholds, getSearchDefaults, updateSearchDefaults } from '../../api/llm';
+import { getCacheConfig, setCacheConfig } from '../../api/cache';
+import type { CacheConfig } from '../../api/cache';
 import type { LLMConfig, LLMConfigUpdate, SearchThresholds, SearchDefaults } from '../../api/llm';
 import { Button } from '../ui/Button';
 import { PromptManager } from './PromptManager';
@@ -175,11 +177,14 @@ export function LLMSettings() {
       {subTab === 'prompts' && <PromptManager />}
       {subTab === 'thresholds' && (
         <div className="space-y-4">
-          <CollapsibleSection title="검색 기본값 설정" defaultOpen>
+          <CollapsibleSection title="검색 기본값 설정" defaultOpen={false}>
             <SearchDefaultsSettings />
           </CollapsibleSection>
-          <CollapsibleSection title="검색 임계값 설정" defaultOpen>
+          <CollapsibleSection title="검색 임계값 설정" defaultOpen={false}>
             <ThresholdSettings />
+          </CollapsibleSection>
+          <CollapsibleSection title="Semantic Cache 설정" defaultOpen={false}>
+            <CacheSettings />
           </CollapsibleSection>
         </div>
       )}
@@ -773,6 +778,126 @@ function SearchDefaultsSettings() {
           </Button>
           <span className="text-xs text-slate-500">내 브라우저에만 저장됩니다.</span>
         </div>
+      )}
+    </div>
+  );
+}
+
+
+// ── Semantic Cache 설정 컴포넌트 ──
+
+function CacheSettings() {
+  const qc = useQueryClient();
+  const isAdmin = useAuthStore((s) => s.user?.role === 'admin') ?? false;
+  const [values, setValues] = useState<CacheConfig | null>(null);
+  const [dirty, setDirty] = useState(false);
+
+  const { data: config, isLoading } = useQuery({
+    queryKey: ['cache-config'],
+    queryFn: getCacheConfig,
+    staleTime: 10_000,
+  });
+
+  useEffect(() => {
+    if (config && !values) setValues(config);
+  }, [config, values]);
+
+  const saveMutation = useMutation({
+    mutationFn: (patch: Partial<CacheConfig>) => setCacheConfig(patch),
+    onSuccess: (data) => {
+      qc.setQueryData(['cache-config'], data);
+      setValues(data);
+      setDirty(false);
+    },
+  });
+
+  const handleChange = (key: keyof CacheConfig, val: number | boolean) => {
+    setValues((v) => v ? { ...v, [key]: val } : v);
+    setDirty(true);
+  };
+
+  if (isLoading || !values) {
+    return <div className="text-center py-6 text-slate-500 animate-pulse text-sm">캐시 설정 로딩 중...</div>;
+  }
+
+  const ttlMinutes = Math.round(values.cache_ttl / 60);
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-slate-500">
+        Semantic Cache의 유사도 임계값과 TTL을 조정합니다. 임계값을 낮추면 더 많은 질문이 캐시 히트됩니다.
+      </p>
+
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 space-y-5">
+        {/* 유사도 임계값 */}
+        <div>
+          <div className="flex justify-between text-xs mb-1">
+            <span className="font-medium text-slate-400">캐시 히트 유사도 임계값</span>
+            <span className="font-mono text-indigo-400">{values.similarity_threshold.toFixed(2)}</span>
+          </div>
+          <input
+            type="range" min={0.5} max={0.99} step={0.01}
+            value={values.similarity_threshold}
+            onChange={(e) => handleChange('similarity_threshold', parseFloat(e.target.value))}
+            className="w-full accent-indigo-500"
+          />
+          <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">
+            <span>0.50 (느슨)</span>
+            <span>현재: {values.similarity_threshold.toFixed(2)}</span>
+            <span>0.99 (엄격)</span>
+          </div>
+          <p className="text-[10px] text-slate-500 mt-1">
+            이 유사도 이상이면 캐시 히트. 한국어 단문 권장값: 0.90~0.93. 기본값: 0.92
+          </p>
+        </div>
+
+        {/* TTL */}
+        <div>
+          <div className="flex justify-between text-xs mb-1">
+            <span className="font-medium text-slate-400">캐시 유효 시간 (TTL)</span>
+            <span className="font-mono text-emerald-400">
+              {ttlMinutes >= 60 ? `${Math.floor(ttlMinutes / 60)}시간 ${ttlMinutes % 60}분` : `${ttlMinutes}분`}
+            </span>
+          </div>
+          <input
+            type="range" min={5} max={1440} step={5}
+            value={ttlMinutes}
+            onChange={(e) => handleChange('cache_ttl', parseInt(e.target.value) * 60)}
+            className="w-full accent-indigo-500"
+          />
+          <div className="flex justify-between text-[10px] text-slate-500 mt-0.5">
+            <span>5분</span>
+            <span>24시간</span>
+          </div>
+          <p className="text-[10px] text-slate-500 mt-1">
+            캐시 항목이 자동 만료되는 시간. 새로 저장되는 항목에만 적용됩니다. 기본값: 30분
+          </p>
+        </div>
+      </div>
+
+      {saveMutation.isError && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-lg text-sm border bg-rose-500/10 border-rose-500/30 text-rose-300">
+          <XCircle className="w-4 h-4" /> 저장 실패: {String(saveMutation.error)}
+        </div>
+      )}
+
+      {saveMutation.isSuccess && !dirty && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-lg text-sm border bg-emerald-500/10 border-emerald-500/30 text-emerald-300">
+          <CheckCircle2 className="w-4 h-4" /> 캐시 설정이 적용되었습니다
+        </div>
+      )}
+
+      {isAdmin ? (
+        <div className="flex gap-2">
+          <Button variant="secondary" size="sm" onClick={() => { if (config) { setValues(config); setDirty(false); } }} disabled={!dirty}>
+            초기화
+          </Button>
+          <Button variant="primary" size="sm" onClick={() => values && saveMutation.mutate(values)} loading={saveMutation.isPending} disabled={!dirty}>
+            <Save className="w-4 h-4" /> 저장 및 적용
+          </Button>
+        </div>
+      ) : (
+        <p className="text-xs text-slate-500">* 이 설정은 관리자만 변경할 수 있습니다.</p>
       )}
     </div>
   );

@@ -4,24 +4,24 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import {
-  Search, AlertCircle, Eye, Globe,
+  Search, AlertCircle, Eye, Globe, Wrench,
   Layers, Database, BookOpen, Zap, MessageSquare, Brain, Target,
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { debugSearch } from '../../api/chat';
 import { getNamespaces, getNamespacesDetail } from '../../api/namespaces';
-import { listHttpTools, testHttpTool } from '../../api/httpTools';
-import type { HttpToolTestResult } from '../../api/httpTools';
+import { listMcpTools, testMcpTool } from '../../api/mcpTools';
+import type { McpToolTestResult } from '../../api/mcpTools';
 import { sortNamespacesByUserPart } from '../../utils/sortNamespaces';
 import { getSearchThresholds } from '../../api/llm';
 import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
 import { CodeBlock } from '../ui/CodeBlock';
 import { Badge } from '../ui/Badge';
-import type { DebugSearchResponse, HttpTool } from '../../types';
+import type { DebugSearchResponse, McpTool } from '../../types';
 
-type TabId = 'namespaces' | 'knowledge' | 'glossary' | 'fewshots' | 'http_tools' | 'stats' | 'debug' | 'llm';
+type TabId = 'namespaces' | 'knowledge' | 'glossary' | 'fewshots' | 'mcp_tools' | 'stats' | 'debug' | 'llm';
 
 interface PipelineStep {
   id: string;
@@ -74,11 +74,11 @@ const PIPELINE_STEPS: PipelineStep[] = [
   },
   {
     id: 'http_tool',
-    label: 'HTTP 도구',
-    icon: <Globe className="w-7 h-7" />,
-    activeIcon: <Globe className="w-7 h-7" />,
+    label: 'MCP 도구',
+    icon: <Wrench className="w-7 h-7" />,
+    activeIcon: <Wrench className="w-7 h-7" />,
     color: 'text-cyan-400',
-    navigateTo: 'http_tools',
+    navigateTo: 'mcp_tools',
   },
   {
     id: 'context',
@@ -271,20 +271,20 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
   const [selectedResult, setSelectedResult] = useState<DebugSearchResponse['results'][number] | null>(null);
   const [selectedFewshot, setSelectedFewshot] = useState<DebugSearchResponse['fewshots'][number] | null>(null);
 
-  // HTTP 도구
-  const [httpTools, setHttpTools] = useState<HttpTool[]>([]);
-  const [httpToolsLoading, setHttpToolsLoading] = useState(false);
-  const [useHttpToolDebug, setUseHttpToolDebug] = useState(false);
-  const [selectedHttpToolId, setSelectedHttpToolId] = useState<number | null>(null);
+  // MCP 도구
+  const [httpTools, setMcpTools] = useState<McpTool[]>([]);
+  const [httpToolsLoading, setMcpToolsLoading] = useState(false);
+  const [useMcpToolDebug, setUseMcpToolDebug] = useState(false);
+  const [selectedMcpToolId, setSelectedMcpToolId] = useState<number | null>(null);
 
-  // HTTP 도구 실행 결과 (tool.id → result)
-  const [httpResults, setHttpResults] = useState<Record<number, HttpToolTestResult>>({});
+  // MCP 도구 실행 결과 (tool.id → result)
+  const [httpResults, setHttpResults] = useState<Record<number, McpToolTestResult>>({});
   const [httpRunning, setHttpRunning] = useState(false);
 
   useEffect(() => {
-    if (!namespace) { setHttpTools([]); return; }
-    setHttpToolsLoading(true);
-    listHttpTools(namespace).then(setHttpTools).catch(() => setHttpTools([])).finally(() => setHttpToolsLoading(false));
+    if (!namespace) { setMcpTools([]); return; }
+    setMcpToolsLoading(true);
+    listMcpTools(namespace).then(setMcpTools).catch(() => setMcpTools([])).finally(() => setMcpToolsLoading(false));
   }, [namespace]);
 
   // Pipeline step animation
@@ -307,7 +307,7 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
   };
 
   // param_schema 타입에 맞게 값 변환
-  const convertParams = (tool: HttpTool): Record<string, unknown> => {
+  const convertParams = (tool: McpTool): Record<string, unknown> => {
     const params: Record<string, unknown> = {};
     for (const p of tool.param_schema) {
       const val = p.example ?? '';
@@ -324,14 +324,14 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
     return params;
   };
 
-  // HTTP 도구 응답을 LLM 컨텍스트 형식으로 변환
-  const buildHttpContext = (results: Record<number, HttpToolTestResult>): string => {
+  // MCP 도구 응답을 LLM 컨텍스트 형식으로 변환
+  const buildHttpContext = (results: Record<number, McpToolTestResult>): string => {
     const sections: string[] = [];
     for (const tool of httpTools) {
       const res = results[tool.id];
       if (!res || res.status !== 'ok' || !res.response || res.response.status_code < 200 || res.response.status_code >= 300) continue;
       sections.push(
-        `\n[HTTP 도구: ${tool.name}]\n` +
+        `\n[MCP 도구: ${tool.name}]\n` +
         `- URL: ${tool.method} ${tool.url}\n` +
         `- 응답 상태: ${res.response.status_code}\n` +
         `- 응답 데이터:\n${res.response.body}`
@@ -369,19 +369,19 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
         animTimers.current.push(t);
       }
 
-      // HTTP 도구 자동 실행 (토글 ON + 활성 도구 존재 시)
+      // MCP 도구 자동 실행 (토글 ON + 활성 도구 존재 시)
       const activeTools = httpTools.filter((t) => t.is_active);
-      if (useHttpToolDebug && activeTools.length > 0) {
+      if (useMcpToolDebug && activeTools.length > 0) {
         setHttpRunning(true);
         const t1 = setTimeout(() => setPipelineStep(5), 3 * 300); // http_tool step
         animTimers.current.push(t1);
 
-        const toolResults: Record<number, HttpToolTestResult> = {};
+        const toolResults: Record<number, McpToolTestResult> = {};
         await Promise.all(
           activeTools.map(async (tool) => {
             try {
               const params = convertParams(tool);
-              const res = await testHttpTool(tool.id, params);
+              const res = await testMcpTool(tool.id, params);
               toolResults[tool.id] = res;
             } catch (e) {
               toolResults[tool.id] = {
@@ -401,7 +401,7 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
         const t3 = setTimeout(() => setPipelineStep(7), 5 * 300);
         animTimers.current.push(t2, t3);
       } else {
-        // HTTP 도구 스킵 → context(5→6) → result(6→7)
+        // MCP 도구 스킵 → context(5→6) → result(6→7)
         const t2 = setTimeout(() => setPipelineStep(5), 3 * 300);
         const t3 = setTimeout(() => setPipelineStep(6), 4 * 300);
         const t4 = setTimeout(() => setPipelineStep(7), 5 * 300);
@@ -496,11 +496,11 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
             </div>
           </div>
 
-          {/* HTTP 도구 토글 */}
+          {/* MCP 도구 토글 */}
           <div className="flex items-center justify-between bg-slate-900/50 rounded-lg px-3 py-2">
             <div className="flex items-center gap-2">
-              <Globe className="w-4 h-4 text-cyan-400" />
-              <span className="text-xs text-slate-400">HTTP 도구 사용</span>
+              <Wrench className="w-4 h-4 text-cyan-400" />
+              <span className="text-xs text-slate-400">MCP 도구 사용</span>
               {httpTools.filter((t) => t.is_active).length > 0 && (
                 <span className="text-[10px] text-slate-500">
                   ({httpTools.filter((t) => t.is_active).length}건 활성)
@@ -508,13 +508,13 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
               )}
             </div>
             <button
-              onClick={() => setUseHttpToolDebug((v) => !v)}
+              onClick={() => setUseMcpToolDebug((v) => !v)}
               className={`relative w-9 h-5 rounded-full transition-colors ${
-                useHttpToolDebug ? 'bg-cyan-600' : 'bg-slate-600'
+                useMcpToolDebug ? 'bg-cyan-600' : 'bg-slate-600'
               }`}
             >
               <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                useHttpToolDebug ? 'translate-x-4' : 'translate-x-0.5'
+                useMcpToolDebug ? 'translate-x-4' : 'translate-x-0.5'
               }`} />
             </button>
           </div>
@@ -673,13 +673,13 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
               })()}
             </div>
 
-            {/* HTTP 도구 실행 결과 */}
-            {useHttpToolDebug && (
+            {/* MCP 도구 실행 결과 */}
+            {useMcpToolDebug && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-                    <Globe className="w-4 h-4 text-cyan-400" />
-                    HTTP 도구 실행 ({Object.values(httpResults).filter((r) => r.status === 'ok' && r.response && r.response.status_code >= 200 && r.response.status_code < 300).length}/{httpTools.filter((t) => t.is_active).length}건 성공)
+                    <Wrench className="w-4 h-4 text-cyan-400" />
+                    MCP 도구 실행 ({Object.values(httpResults).filter((r) => r.status === 'ok' && r.response && r.response.status_code >= 200 && r.response.status_code < 300).length}/{httpTools.filter((t) => t.is_active).length}건 성공)
                   </h3>
                   {httpRunning && <span className="text-xs text-cyan-400 animate-pulse">실행 중...</span>}
                 </div>
@@ -694,11 +694,11 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
                     <button
                       key={tool.id}
                       type="button"
-                      onClick={() => setSelectedHttpToolId(tool.id)}
+                      onClick={() => setSelectedMcpToolId(tool.id)}
                       className={`w-full text-left bg-slate-800 border border-slate-700 border-l-4 ${borderColor} rounded-xl px-4 py-3 hover:bg-slate-700/40 transition-colors`}
                     >
                       <div className="flex items-center gap-3">
-                        <Globe className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+                        <Wrench className="w-4 h-4 text-cyan-400 flex-shrink-0" />
                         <span className="font-semibold text-slate-200 flex-1 truncate">{tool.name}</span>
                         {!res && !httpRunning && <Badge color="slate">미실행</Badge>}
                         {!res && httpRunning && <span className="text-xs text-cyan-400 animate-pulse">호출 중...</span>}
@@ -726,13 +726,13 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
                   );
                 })}
 
-                {/* HTTP 도구 상세 결과 모달 */}
-                {selectedHttpToolId && (() => {
-                  const tool = httpTools.find((t) => t.id === selectedHttpToolId);
-                  const res = httpResults[selectedHttpToolId];
+                {/* MCP 도구 상세 결과 모달 */}
+                {selectedMcpToolId && (() => {
+                  const tool = httpTools.find((t) => t.id === selectedMcpToolId);
+                  const res = httpResults[selectedMcpToolId];
                   if (!tool) return null;
                   return (
-                    <Modal isOpen onClose={() => setSelectedHttpToolId(null)} title={tool.name} maxWidth="max-w-3xl">
+                    <Modal isOpen onClose={() => setSelectedMcpToolId(null)} title={tool.name} maxWidth="max-w-3xl">
                       <div className="space-y-4 overflow-y-auto max-h-[70vh]">
                         {/* 기본 정보 */}
                         <div className="flex items-center justify-between bg-slate-900/60 rounded-lg px-4 py-3">
@@ -965,11 +965,11 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
               <Eye className="w-4 h-4 text-indigo-400" />
               LLM 컨텍스트 미리보기
               {Object.keys(httpResults).length > 0 && (
-                <span className="text-[10px] text-cyan-400 ml-1">(HTTP 도구 응답 포함)</span>
+                <span className="text-[10px] text-cyan-400 ml-1">(MCP 도구 응답 포함)</span>
               )}
             </button>
 
-            {/* Context preview modal — 지식검색 + HTTP 도구 응답 합산 */}
+            {/* Context preview modal — 지식검색 + MCP 도구 응답 합산 */}
             <ContextPreviewModal
               isOpen={showContext}
               onClose={() => setShowContext(false)}

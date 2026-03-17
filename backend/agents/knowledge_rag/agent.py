@@ -18,7 +18,6 @@ from domain.llm.base import resolve_system_prompt
 from domain.llm.factory import get_llm_provider
 from shared.embedding import embedding_service
 from shared import cache as sem_cache
-from shared import reranker
 
 logger = logging.getLogger(__name__)
 
@@ -93,9 +92,11 @@ class KnowledgeRagAgent(AgentBase):
                 logger.info("멀티턴 검색 보강: '%s' → '%s'", query, search_question)
 
             query_vec = await embedding_service.embed(search_question)
+            # 캐시 전용: 한글 공백 정규화 후 embed (RAG 검색은 원본 query_vec 유지)
+            cache_vec = await embedding_service.embed(sem_cache.normalize_query(search_question))
 
             # ── Semantic Cache 조회 ──
-            cached = await sem_cache.get_cached(namespace, query_vec)
+            cached = await sem_cache.get_cached(namespace, cache_vec)
             if cached:
                 await update_assistant_message(msg_id, cached["answer"], "completed")
                 yield {
@@ -117,13 +118,10 @@ class KnowledgeRagAgent(AgentBase):
             enriched_query = f"{search_question} {mapped_term}" if mapped_term else search_question
 
             yield {"type": "status", "step": "search", "message": "관련 문서 검색 중..."}
-            # Re-Ranking: 후보를 top_k * 4배 확보 후 재정렬
-            candidate_k = max(top_k * 4, 12)
-            raw_results, fewshots = await asyncio.gather(
-                retrieval.search_knowledge(namespace, query_vec, enriched_query, w_vector, w_keyword, candidate_k, category),
+            results, fewshots = await asyncio.gather(
+                retrieval.search_knowledge(namespace, query_vec, enriched_query, w_vector, w_keyword, top_k, category),
                 retrieval.fetch_fewshots(namespace, query_vec),
             )
-            results = await reranker.rerank(enriched_query, raw_results, top_k)
 
             fs_section = retrieval.build_fewshot_section(fewshots)
             doc_context = retrieval.build_context(results)
@@ -174,12 +172,13 @@ class KnowledgeRagAgent(AgentBase):
                 await update_inhouse_conv_id(conversation_id, new_inhouse_conv_id)
             await create_query_log(namespace, query, final_answer, has_results, mapped_term, msg_id)
 
-            # ── Semantic Cache 저장 (LLM 정상 응답 시만) ──
-            if has_results and final_answer != LLM_UNAVAILABLE_MSG:
-                await sem_cache.set_cached(namespace, query_vec, {
+            # ── Semantic Cache 저장 (LLM 정상 응답 시만, 결과 유무 무관) ──
+            if final_answer != LLM_UNAVAILABLE_MSG:
+                await sem_cache.set_cached(namespace, cache_vec, {
                     "answer": final_answer,
                     "mapped_term": mapped_term,
                     "results": results_to_payload(results),
+                    "query": query,
                 })
 
             yield {"type": "done", "message_id": msg_id}

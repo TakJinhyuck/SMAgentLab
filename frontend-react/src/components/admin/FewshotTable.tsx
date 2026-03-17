@@ -1,11 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, X, Zap } from 'lucide-react';
-import { getFewshots, createFewshot, updateFewshot, deleteFewshot } from '../../api/fewshots';
-import { getNamespaces, getNamespacesDetail } from '../../api/namespaces';
-import { useAppStore } from '../../store/useAppStore';
-import { useAuthStore } from '../../store/useAuthStore';
-import { sortNamespacesByUserPart } from '../../utils/sortNamespaces';
+import { getFewshots, createFewshot, updateFewshot, deleteFewshot, updateFewshotStatus } from '../../api/fewshots';
+import { useNamespaceAccess } from '../../utils/useNamespaceAccess';
 import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
 import { Badge } from '../ui/Badge';
@@ -19,42 +16,30 @@ interface FewshotFormData {
 
 const defaultForm: FewshotFormData = { question: '', answer: '', knowledge_id: '' };
 
+type StatusFilter = 'all' | 'active' | 'candidate';
+
+function StatusBadge({ status }: { status: string }) {
+  if (status === 'active') {
+    return <Badge color="emerald">활성</Badge>;
+  }
+  if (status === 'candidate') {
+    return <Badge color="amber">후보</Badge>;
+  }
+  return null;
+}
+
 export function FewshotTable() {
   const qc = useQueryClient();
-  const { namespace: storeNamespace } = useAppStore();
-  const user = useAuthStore((s) => s.user);
-  const [selectedNs, setSelectedNs] = useState(storeNamespace || '');
-
-  const { data: nsDetails = [] } = useQuery({
-    queryKey: ['namespaces-detail'],
-    queryFn: getNamespacesDetail,
-    staleTime: 30_000,
-  });
-
-  const nsOwnerPart = nsDetails.find((n) => n.name === selectedNs)?.owner_part;
-  // owner_part 없으면 공통(모두 가능), 있으면 같은 파트 or admin
-  const canModifyNs = user?.role === 'admin' || !nsOwnerPart || nsOwnerPart === user?.part;
+  const { selectedNs, setSelectedNs, canModifyNs, sortedNamespaces, user } = useNamespaceAccess();
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingItem, setEditingItem] = useState<FewshotItem | null>(null);
   const [editForm, setEditForm] = useState<FewshotFormData>(defaultForm);
   const [showCreate, setShowCreate] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [createForm, setCreateForm] = useState<FewshotFormData>(defaultForm);
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
-
-  const { data: namespaces = [] } = useQuery({
-    queryKey: ['namespaces'],
-    queryFn: getNamespaces,
-    staleTime: 30_000,
-  });
-  const sortedNamespaces = sortNamespacesByUserPart(namespaces, user?.part, nsDetails);
-
-  // 삭제된 네임스페이스 선택 상태 자동 리셋
-  useEffect(() => {
-    if (selectedNs && namespaces.length > 0 && !namespaces.includes(selectedNs)) {
-      setSelectedNs('');
-    }
-  }, [namespaces, selectedNs]);
 
   const { data: items = [], isLoading, error } = useQuery({
     queryKey: ['fewshots', selectedNs],
@@ -63,6 +48,11 @@ export function FewshotTable() {
     staleTime: 15_000,
     refetchOnMount: 'always',
   });
+
+  // Client-side status filter
+  const filteredItems = statusFilter === 'all'
+    ? items
+    : items.filter((item) => item.status === statusFilter);
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -102,8 +92,19 @@ export function FewshotTable() {
     },
   });
 
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: string }) => updateFewshotStatus(id, status),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['fewshots', selectedNs] });
+      setShowEdit(false);
+      setEditingId(null);
+      setEditingItem(null);
+    },
+  });
+
   const startEdit = (item: FewshotItem) => {
     setEditingId(item.id);
+    setEditingItem(item);
     setEditForm({
       question: item.question,
       answer: item.answer,
@@ -111,6 +112,12 @@ export function FewshotTable() {
     });
     setShowEdit(true);
   };
+
+  const statusTabs: { key: StatusFilter; label: string }[] = [
+    { key: 'all', label: '전체' },
+    { key: 'active', label: '활성' },
+    { key: 'candidate', label: '후보' },
+  ];
 
   return (
     <div className="space-y-4">
@@ -121,7 +128,7 @@ export function FewshotTable() {
             {selectedNs && <span className="text-sm font-normal text-slate-500 ml-2">({selectedNs})</span>}
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            👍 긍정 피드백 시 자동 등록 — 유사 질문에 LLM 컨텍스트로 삽입됩니다
+            👍 긍정 피드백 시 후보 등록 — 활성화 후 LLM 컨텍스트에 포함됩니다
           </p>
         </div>
         <Button variant="primary" size="sm" onClick={() => setShowCreate(true)} disabled={!selectedNs || !canModifyNs}>
@@ -143,6 +150,33 @@ export function FewshotTable() {
         </select>
       </div>
 
+      {/* Status filter tabs */}
+      {selectedNs && (
+        <div className="flex gap-1">
+          {statusTabs.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setStatusFilter(key)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                statusFilter === key
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+              }`}
+            >
+              {label}
+              {key !== 'all' && (
+                <span className="ml-1.5 opacity-70">
+                  ({items.filter((i) => i.status === key).length})
+                </span>
+              )}
+              {key === 'all' && (
+                <span className="ml-1.5 opacity-70">({items.length})</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
       {!selectedNs && (
         <div className="text-center py-10 text-slate-500">파트를 선택하세요.</div>
       )}
@@ -155,7 +189,7 @@ export function FewshotTable() {
 
       {selectedNs && !isLoading && (
         <div className="space-y-2">
-          {items.map((item) => (
+          {filteredItems.map((item) => (
             <div
               key={item.id}
               className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-slate-700/50 transition-colors"
@@ -167,6 +201,7 @@ export function FewshotTable() {
                 <p className="text-xs text-slate-500 mt-0.5 truncate">{item.answer.slice(0, 100)}{item.answer.length > 100 ? '...' : ''}</p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0 text-xs text-slate-500">
+                <StatusBadge status={item.status} />
                 {item.created_by_username && <span>{item.created_by_username}</span>}
                 {item.created_by_part && (
                   <Badge color={canModifyNs ? 'emerald' : 'slate'}>{item.created_by_part}</Badge>
@@ -175,11 +210,11 @@ export function FewshotTable() {
               </div>
             </div>
           ))}
-          {items.length === 0 && (
+          {filteredItems.length === 0 && (
             <div className="text-center py-10 text-slate-500">
               <Zap className="w-8 h-8 mx-auto mb-2 text-slate-500" />
               <p>Few-shot 항목이 없습니다.</p>
-              <p className="text-xs mt-1">챗에서 👍 긍정 피드백을 하면 자동으로 등록됩니다.</p>
+              <p className="text-xs mt-1">챗에서 👍 긍정 피드백을 하면 후보로 자동 등록됩니다.</p>
             </div>
           )}
         </div>
@@ -242,13 +277,35 @@ export function FewshotTable() {
       {/* Edit / View Modal */}
       <Modal
         isOpen={showEdit}
-        onClose={() => { setShowEdit(false); setEditingId(null); }}
+        onClose={() => { setShowEdit(false); setEditingId(null); setEditingItem(null); }}
         title={canModifyNs ? 'Few-shot 수정' : 'Few-shot 상세'}
         maxWidth="max-w-xl"
       >
         <div className="space-y-3">
           {canModifyNs && (
-            <div className="flex justify-end pb-3 border-b border-slate-700">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-700">
+              <div className="flex items-center gap-2">
+                {editingItem && <StatusBadge status={editingItem.status} />}
+                {/* Status transition buttons */}
+                {editingItem?.status === 'candidate' && (
+                  <Button
+                    variant="primary" size="sm"
+                    loading={statusMutation.isPending}
+                    onClick={() => editingId !== null && statusMutation.mutate({ id: editingId, status: 'active' })}
+                  >
+                    활성화
+                  </Button>
+                )}
+                {editingItem?.status === 'active' && (
+                  <Button
+                    variant="secondary" size="sm"
+                    loading={statusMutation.isPending}
+                    onClick={() => editingId !== null && statusMutation.mutate({ id: editingId, status: 'candidate' })}
+                  >
+                    후보로 내리기
+                  </Button>
+                )}
+              </div>
               <Button
                 variant="danger" size="sm"
                 onClick={() => editingId !== null && setDeleteTarget(editingId)}
@@ -288,8 +345,11 @@ export function FewshotTable() {
           {updateMutation.error && (
             <p className="text-xs text-rose-400">{String(updateMutation.error)}</p>
           )}
+          {statusMutation.error && (
+            <p className="text-xs text-rose-400">{String(statusMutation.error)}</p>
+          )}
           <div className="flex gap-2 justify-end">
-            <Button variant="ghost" size="sm" onClick={() => { setShowEdit(false); setEditingId(null); }}>
+            <Button variant="ghost" size="sm" onClick={() => { setShowEdit(false); setEditingId(null); setEditingItem(null); }}>
               <X className="w-3.5 h-3.5" />{canModifyNs ? '취소' : '닫기'}
             </Button>
             {canModifyNs && (

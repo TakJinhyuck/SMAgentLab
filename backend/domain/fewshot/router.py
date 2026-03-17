@@ -6,7 +6,7 @@ from core.dependencies import get_current_user, check_namespace_ownership
 from shared.embedding import embedding_service
 from domain.knowledge import retrieval
 from domain.fewshot.schemas import (
-    FewshotCreate, FewshotOut, FewshotUpdate,
+    FewshotCreate, FewshotOut, FewshotUpdate, FewshotStatusUpdate,
     FewshotSearchRequest, FewshotSearchResponse, FewshotResult,
 )
 
@@ -14,25 +14,44 @@ router = APIRouter(prefix="/api/fewshots", tags=["fewshots"])
 
 
 @router.get("", response_model=list[FewshotOut])
-async def list_fewshots(namespace: str, user: dict = Depends(get_current_user)):
+async def list_fewshots(namespace: str, status: str = None, user: dict = Depends(get_current_user)):
     async with get_conn() as conn:
         ns_id = await resolve_namespace_id(conn, namespace)
         if ns_id is None:
             return []
-        rows = await conn.fetch(
-            """
-            SELECT f.id, n.name AS namespace, f.question, f.answer, f.knowledge_id,
-                   f.created_by_part, f.created_by_user_id,
-                   u.username AS created_by_username,
-                   f.created_at::text
-            FROM ops_fewshot f
-            JOIN ops_namespace n ON f.namespace_id = n.id
-            LEFT JOIN ops_user u ON f.created_by_user_id = u.id
-            WHERE f.namespace_id = $1
-            ORDER BY f.created_at DESC
-            """,
-            ns_id,
-        )
+        if status:
+            rows = await conn.fetch(
+                """
+                SELECT f.id, n.name AS namespace, f.question, f.answer, f.knowledge_id,
+                       f.created_by_part, f.created_by_user_id,
+                       u.username AS created_by_username,
+                       f.created_at::text,
+                       COALESCE(f.status, 'active') AS status
+                FROM ops_fewshot f
+                JOIN ops_namespace n ON f.namespace_id = n.id
+                LEFT JOIN ops_user u ON f.created_by_user_id = u.id
+                WHERE f.namespace_id = $1
+                  AND f.status = $2
+                ORDER BY f.created_at DESC
+                """,
+                ns_id, status,
+            )
+        else:
+            rows = await conn.fetch(
+                """
+                SELECT f.id, n.name AS namespace, f.question, f.answer, f.knowledge_id,
+                       f.created_by_part, f.created_by_user_id,
+                       u.username AS created_by_username,
+                       f.created_at::text,
+                       COALESCE(f.status, 'active') AS status
+                FROM ops_fewshot f
+                JOIN ops_namespace n ON f.namespace_id = n.id
+                LEFT JOIN ops_user u ON f.created_by_user_id = u.id
+                WHERE f.namespace_id = $1
+                ORDER BY f.created_at DESC
+                """,
+                ns_id,
+            )
     return [dict(r) for r in rows]
 
 
@@ -66,7 +85,8 @@ async def create_fewshot(body: FewshotCreate, user: dict = Depends(get_current_u
                                      created_by_part, created_by_user_id)
             VALUES ($1, $2, $3, $4, $5::vector, $6, $7)
             RETURNING id, $8::text AS namespace, question, answer, knowledge_id,
-                      created_by_part, created_by_user_id, created_at::text
+                      created_by_part, created_by_user_id, created_at::text,
+                      COALESCE(status, 'active') AS status
             """,
             ns_id, body.question, body.answer, body.knowledge_id,
             str(embedding), user["part"], user["id"], body.namespace,
@@ -132,3 +152,19 @@ async def delete_fewshot(fewshot_id: int, user: dict = Depends(get_current_user)
         result = await conn.execute("DELETE FROM ops_fewshot WHERE id = $1", fewshot_id)
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Few-shot not found")
+
+
+@router.patch("/{fewshot_id}/status", status_code=200)
+async def update_fewshot_status(fewshot_id: int, body: FewshotStatusUpdate, user: dict = Depends(get_current_user)):
+    if body.status not in ("active", "candidate", "rejected"):
+        raise HTTPException(status_code=400, detail="유효하지 않은 상태값입니다.")
+    async with get_conn() as conn:
+        existing = await conn.fetchrow(
+            "SELECT f.namespace_id, n.name AS ns_name FROM ops_fewshot f JOIN ops_namespace n ON f.namespace_id = n.id WHERE f.id = $1",
+            fewshot_id,
+        )
+        if not existing:
+            raise HTTPException(status_code=404, detail="Few-shot not found")
+        await check_namespace_ownership(existing["ns_name"], user)
+        await conn.execute("UPDATE ops_fewshot SET status = $1 WHERE id = $2", body.status, fewshot_id)
+    return {"status": body.status}

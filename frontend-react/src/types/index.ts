@@ -215,6 +215,7 @@ export interface FewshotItem {
   created_by_user_id?: number | null;
   created_by_username?: string | null;
   created_at: string;
+  status: string;
 }
 
 export interface FewshotCreatePayload {
@@ -281,8 +282,8 @@ export interface GlobalStats {
   unresolved_cases: Array<{ namespace: string; question: string; created_at: string }>;
 }
 
-// HTTP Tool types
-export interface HttpToolParam {
+// MCP Tool types
+export interface McpToolParam {
   name: string;
   type: string;
   required: boolean;
@@ -290,15 +291,17 @@ export interface HttpToolParam {
   example?: string | null;
 }
 
-export interface HttpTool {
+export interface McpTool {
   id: number;
   namespace: string;
   name: string;
   description: string;
   method: string;
-  url: string;
+  hub_base_url: string;
+  tool_path: string;
+  url: string; // hub_base_url + tool_path (서버에서 조합)
   headers: Record<string, string>;
-  param_schema: HttpToolParam[];
+  param_schema: McpToolParam[];
   response_example: Record<string, unknown> | null;
   timeout_sec: number;
   max_response_kb: number;
@@ -306,26 +309,28 @@ export interface HttpTool {
   created_at: string;
 }
 
-export interface HttpToolCreatePayload {
+export interface McpToolCreatePayload {
   namespace: string;
   name: string;
   description: string;
   method: string;
-  url: string;
+  hub_base_url: string;
+  tool_path: string;
   headers: Record<string, string>;
-  param_schema: HttpToolParam[];
+  param_schema: McpToolParam[];
   response_example?: Record<string, unknown> | null;
   timeout_sec?: number;
   max_response_kb?: number;
 }
 
-export interface HttpToolUpdatePayload {
+export interface McpToolUpdatePayload {
   name?: string;
   description?: string;
   method?: string;
-  url?: string;
+  hub_base_url?: string;
+  tool_path?: string;
   headers?: Record<string, string>;
-  param_schema?: HttpToolParam[];
+  param_schema?: McpToolParam[];
   response_example?: Record<string, unknown> | null;
   timeout_sec?: number;
   max_response_kb?: number;
@@ -340,7 +345,7 @@ export interface SSEToolRequestEvent {
   tool_url?: string;
   params?: Record<string, string>;
   missing_params?: string[];
-  param_schema?: HttpToolParam[];
+  param_schema?: McpToolParam[];
   tools?: Array<{ id: number; name: string; description: string }>;
   message?: string;
 }

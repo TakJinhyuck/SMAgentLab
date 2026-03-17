@@ -23,12 +23,6 @@ ENV HF_HOME=/root/.cache/huggingface
 ARG EMBEDDING_MODEL=paraphrase-multilingual-mpnet-base-v2
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('${EMBEDDING_MODEL}')"
 
-# Re-Ranking 모델 사전 다운로드 (RERANKER_MODEL 설정 시에만)
-ARG RERANKER_MODEL=""
-RUN if [ -n "${RERANKER_MODEL}" ]; then \
-    python -c "from sentence_transformers import CrossEncoder; CrossEncoder('${RERANKER_MODEL}')"; \
-    fi
-
 # 소스 코드 복사
 COPY . .
 

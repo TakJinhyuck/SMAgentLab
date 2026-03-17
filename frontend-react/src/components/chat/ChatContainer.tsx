@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Square, AlertCircle, ChevronDown, ChevronUp, Globe } from 'lucide-react';
+import { Send, Square, AlertCircle, ChevronDown, ChevronUp, Wrench } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import {
   useStreamStore,
@@ -375,7 +375,7 @@ export function ChatContainer() {
       topK: searchConfig.topK,
       conversationId,
       category: resolvedCategory,
-      agentType: useHttpTool ? 'http_tool' : undefined,
+      agentType: useHttpTool ? 'mcp_tool' : undefined,
       onConversationCreated: (id) => {
         // Guard: if stream was already stopped/cleared, don't navigate
         if (!useStreamStore.getState().active) return;
@@ -444,7 +444,7 @@ export function ChatContainer() {
               startChatStream({
                 namespace: namespace!,
                 question: [...displayMessages].reverse().find((m) => m.role === 'user')?.content || '',
-                agentType: 'http_tool',
+                agentType: 'mcp_tool',
                 wVector: searchConfig.wVector,
                 wKeyword: searchConfig.wKeyword,
                 topK: searchConfig.topK,
@@ -465,7 +465,7 @@ export function ChatContainer() {
               startChatStream({
                 namespace: namespace!,
                 question: [...displayMessages].reverse().find((m) => m.role === 'user')?.content || '',
-                agentType: 'http_tool',
+                agentType: 'mcp_tool',
                 wVector: searchConfig.wVector,
                 wKeyword: searchConfig.wKeyword,
                 topK: searchConfig.topK,
@@ -519,10 +519,10 @@ export function ChatContainer() {
                 ? 'bg-emerald-900/50 text-emerald-400 border border-emerald-700/50'
                 : 'bg-slate-700/50 text-slate-500 border border-slate-600/50 hover:text-slate-400'
             }`}
-            title="HTTP 도구를 사용하여 외부 API를 호출합니다"
+            title="MCP 도구를 사용하여 외부 API를 호출합니다"
           >
-            <Globe className="w-3.5 h-3.5" />
-            HTTP 도구 {useHttpTool ? 'ON' : 'OFF'}
+            <Wrench className="w-3.5 h-3.5" />
+            MCP 도구 {useHttpTool ? 'ON' : 'OFF'}
           </button>
         </div>
         <div className="flex gap-3 items-end">
@@ -530,7 +530,7 @@ export function ChatContainer() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={useHttpTool ? 'HTTP 도구를 활용한 질문을 입력하세요... (Ctrl+Enter로 전송)' : '질문을 입력하세요... (Ctrl+Enter로 전송)'}
+            placeholder={useHttpTool ? 'MCP 도구를 활용한 질문을 입력하세요... (Ctrl+Enter로 전송)' : '질문을 입력하세요... (Ctrl+Enter로 전송)'}
             rows={2}
             disabled={!namespace || isLoading}
             className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none disabled:opacity-50 text-sm"

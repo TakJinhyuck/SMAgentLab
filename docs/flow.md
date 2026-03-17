@@ -26,7 +26,16 @@
 │       → agent.stream_chat(query, user, context)             │
 │                                                             │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │  Step 0: Multi-turn Search Enrichment               │   │
+│  │  Step 0-A: Semantic Cache 조회 (Redis)              │   │
+│  │                                                     │   │
+│  │  query_vec로 Redis 스캔 (semcache:{ns}:*)           │   │
+│  │  코사인 유사도 ≥ 0.97 히트 → 저장된 답변 즉시 반환  │   │
+│  │  미스 → Step 0-B 이후 정상 파이프라인 실행          │   │
+│  │  Redis 미연결 시 이 단계 무시 (graceful degradation) │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  Step 0-B: Multi-turn Search Enrichment             │   │
 │  │  (멀티턴 검색 보강 — 2턴 이상 대화에서 자동 적용)      │   │
 │  │                                                     │   │
 │  │  현재 질문: "그 쿼리 알려줘"                         │   │
@@ -44,7 +53,7 @@
 │  └─────────────────────────────────────────────────────┘   │
 │                                                             │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │  Step 1: Semantic Glossary Mapping                  │   │
+│  │  Step 1: Semantic Glossary Mapping                   │   │
 │  │                                                     │   │
 │  │  질문 텍스트 (또는 search_question)                   │   │
 │  │      │                                              │   │
@@ -429,9 +438,9 @@ ops_query_log INSERT
    │   → 이 문서가 이후 동일 주제 검색에서 더 높은 점수를 받음 (검색 랭킹 상승)
    ├─ UPDATE ops_query_log SET status = 'resolved'
    │   → pending → resolved 전환 (피드백으로 품질 확인됨)
-   └─ INSERT INTO ops_fewshot (namespace, question, answer, knowledge_id, embedding)
-       → 질문 임베딩 생성 후 저장
-       → 다음 유사 질문 시 LLM 프롬프트에 "[과거 유사 질문 답변 사례]"로 자동 삽입
+   └─ INSERT INTO ops_fewshot (namespace, question, answer, knowledge_id, embedding, status='candidate')
+       → 질문 임베딩 생성 후 저장 (status='candidate' — 어드민 검토 후 'active' 승인 필요)
+       → status='active'인 few-shot만 LLM 프롬프트에 "[과거 유사 질문 답변 사례]"로 주입
 
    👎 싫어요 클릭
    │
@@ -639,9 +648,9 @@ provider.health_check()         (연결 확인)
 
 ---
 
-## 10. HTTP 도구 에이전트 플로우
+## 10. MCP 도구 에이전트 플로우
 
-`agent_type=http_tool` 로 요청 시 `HttpToolAgent`가 처리. 3가지 진입 케이스.
+`agent_type=mcp_tool` 로 요청 시 `McpToolAgent`가 처리. 3가지 진입 케이스.
 
 ```
 Case 3 — 첫 진입 (approved_tool·selected_tool_id 없음)

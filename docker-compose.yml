@@ -33,8 +33,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-      args:
-        RERANKER_MODEL: ${RERANKER_MODEL:-}
     container_name: ops-backend
     restart: unless-stopped
     ports:
@@ -50,7 +48,6 @@ services:
       FERNET_SECRET_KEY: ${FERNET_SECRET_KEY:-}
       ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD:-1111}
       REDIS_URL: redis://ops-redis:6379/0
-      RERANKER_MODEL: ${RERANKER_MODEL:-}
       # 나머지 설정은 backend/core/config.py 코드 기본값 사용
     extra_hosts:
       - "host.docker.internal:host-gateway"

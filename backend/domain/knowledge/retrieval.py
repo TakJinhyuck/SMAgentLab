@@ -176,6 +176,7 @@ async def fetch_fewshots(
                    1 - (embedding <=> $2::vector) AS similarity
             FROM ops_fewshot
             WHERE namespace_id = $1
+              AND (status IS NULL OR status = 'active')
               AND 1 - (embedding <=> $2::vector) >= $4
             ORDER BY embedding <=> $2::vector
             LIMIT $3

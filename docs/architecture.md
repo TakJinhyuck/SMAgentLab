@@ -1,4 +1,4 @@
-# Ops-Navigator 시스템 아키텍처 (v2.3)
+# Ops-Navigator 시스템 아키텍처 (v2.4)
 
 ## 개요
 
@@ -10,6 +10,8 @@ v2.0.0에서 **DDD(Domain-Driven Design) 구조 전환**, **JWT 인증/인가**,
 v2.1에서 **공통 namespace 권한(owner_part=NULL → 전체 CRUD)**, **파트/namespace 이름 변경**, **슈퍼어드민 파트 분리(회원가입 노출 차단)**, **LLM 설정 일반 사용자 개방**이 추가되었다.
 
 v2.3에서 **AgentRegistry 패턴 도입** (AgentBase 추상 클래스 + KnowledgeRagAgent 위임), **공유 DB 헬퍼 분리** (`helpers.py`, `resolve_namespace_id`), **agent_type 컬럼 추가** (멀티 에이전트 확장 준비), **DB 성능 인덱스 6개 추가**가 적용되었다.
+
+v2.4에서 **Semantic Cache** (Redis 기반 유사 질문 캐싱, TTL·유사도 임계값 런타임 설정 가능, 기본 0.92, LLM 정상 응답 시 항상 저장), **Few-shot 라이프사이클** (`ops_fewshot.status` active/candidate + 어드민 UI), **Glossary AI 추천** (미매핑 질문 on-demand LLM 분석, 조회 한도 어드민 설정 가능), **MCP 도구** (`ops_http_tool` → `ops_mcp_tool` 리네임, `hub_base_url`+`tool_path` 분리 구조, 감사 로그 `ops_mcp_tool_log`), **시스템 설정 DB 영속화** (`ops_system_config` key-value 테이블, 캐시 설정 3종 재시작 후에도 유지)가 추가되었다. Re-Ranking(Cross-Encoder)은 영어 기반으로 한국어 성능 불충분 판단으로 제거되었다.
 
 ---
 
@@ -74,15 +76,16 @@ backend/
 │   ├── base.py          #   AgentBase 추상 클래스 + AgentRegistry 싱글톤
 │   ├── knowledge_rag/
 │   │   └── agent.py     #   KnowledgeRagAgent — 하이브리드 검색 + LLM 스트리밍
-│   └── http_tool/
-│       └── agent.py     #   HttpToolAgent — 외부 API 연동 (3-case 플로우 + RAG 통합, _coerce_params 타입 변환)
+│   └── mcp_tool/
+│       └── agent.py     #   McpToolAgent — 외부 MCP API 연동 (3-case 플로우 + RAG 통합, _coerce_params 타입 변환, 감사 로그)
 ├── core/
 │   ├── config.py        # 환경변수 기반 설정 (pydantic-settings, JWT·Fernet 키 포함)
 │   ├── database.py      # asyncpg 커넥션 풀 관리 + resolve_namespace_id() 공통 헬퍼
 │   ├── security.py      # JWT 발급/검증, bcrypt 해싱, Fernet 대칭 암호화 (API Key)
 │   └── dependencies.py  # FastAPI Depends (get_current_user, get_current_admin, check_namespace_ownership)
 ├── shared/
-│   └── embedding.py     # Sentence-Transformers 싱글톤
+│   ├── embedding.py     # Sentence-Transformers 싱글톤
+│   └── cache.py         # Redis 기반 Semantic Cache (유사도 기본 0.92, TTL 기본 30분, 런타임 설정 가능, graceful degradation)
 ├── domain/
 │   ├── auth/            # 인증/계정
 │   │   ├── schemas.py   #   RegisterRequest, LoginRequest, TokenResponse, UserResponse 등
@@ -195,13 +198,17 @@ ops_knowledge    -- 지식 베이스: 운영 가이드 + SQL 템플릿 (HNSW + G
 ops_knowledge_category -- 네임스페이스별 카테고리 목록 (namespace_id FK CASCADE, UNIQUE(namespace_id, name))
 ops_fewshot      -- 긍정 피드백 Q&A 쌍 (LLM 프롬프트 few-shot 삽입용, HNSW 인덱스)
                  --   + namespace_id FK → ops_namespace.id CASCADE
+                 --   + status VARCHAR(20) DEFAULT 'active' — 'active'만 프롬프트에 주입
+                 --     'candidate': 피드백 수신 시 기본값, 어드민 검토 후 'active'로 승인
 ops_feedback     -- 좋아요/싫어요 피드백 로그 (namespace_id FK CASCADE, agent_type, meta JSONB)
 ops_query_log    -- 질의 로그 (namespace_id FK, question, status[pending/resolved/unresolved], mapped_term, agent_type)
 ops_conversation -- 대화방 (namespace_id FK CASCADE, title, user_id FK CASCADE, inhouse_conv_id, agent_type)
 ops_message      -- 대화 메시지 (conversation_id FK, role, content, mapped_term, results JSONB, status)
 ops_conv_summary -- 대화 요약 (conversation_id FK, summary, embedding, turn_start, turn_end)
-ops_http_tool    -- HTTP 도구 정의 (namespace_id FK, name, method, url, headers JSONB,
+ops_mcp_tool     -- MCP 도구 정의 (namespace_id FK, name, method, hub_base_url, tool_path, headers JSONB,
                  --   param_schema JSONB, timeout_sec, max_response_kb, is_active)
+ops_mcp_tool_log -- MCP 도구 감사 로그 (tool_id FK, tool_name, user_id, conversation_id, params JSONB,
+                 --   response_status, response_kb, duration_ms, error, called_at)
 ops_prompt       -- 프롬프트 관리 (func_key, content, description) — Admin UI에서 편집 가능
 ```
 
@@ -294,6 +301,7 @@ ops_prompt       -- 프롬프트 관리 (func_key, content, description) — Adm
 | `PUT` | `/api/fewshots/{id}` | Few-shot 수정 (질문 변경 시 재임베딩, 같은 부서 또는 admin만) |
 | `DELETE` | `/api/fewshots/{id}` | Few-shot 삭제 (같은 부서 또는 admin만) |
 | `POST` | `/api/fewshots/search` | 질문으로 few-shot 검색 테스트 (실제 검색 결과 + 프롬프트 섹션 미리보기) |
+| `PATCH` | `/api/fewshots/{id}/status` | Few-shot 상태 전환 (`active` ↔ `candidate`) |
 
 ### 관리/설정
 
@@ -310,16 +318,25 @@ ops_prompt       -- 프롬프트 관리 (func_key, content, description) — Adm
 | `GET` | `/api/stats` | 네임스페이스별 통계 (전체 namespace, 지식/용어집 개수 포함) |
 | `GET` | `/api/stats/namespace/{name}` | 네임스페이스 상세 통계 (업무 유형별 분포, 미해결 목록) |
 | `DELETE` | `/api/stats/query-log/{id}` | 미해결 질의 로그 삭제 (지식 등록 후 처리 완료 표시) |
+| `GET` | `/api/admin/cache/stats` | 네임스페이스 Semantic Cache 통계 (total_entries, total_hits, connected) |
+| `GET` | `/api/admin/cache/entries` | 캐시 엔트리 목록 (히트 수 내림차순, 질문·TTL·hits 포함) |
+| `DELETE` | `/api/admin/cache` | 네임스페이스 캐시 전체 무효화 |
+| `DELETE` | `/api/admin/cache/entry` | 단일 캐시 엔트리 삭제 |
+| `POST` | `/api/admin/glossary/suggest` | 미매핑 질문 LLM 분석 → 용어 후보 반환 (`limit` 파라미터로 조회 건수 설정, 기본 50, 최대 200) |
+| `POST` | `/api/admin/glossary/suggest/apply` | 추천 용어 1-click 등록 (임베딩 자동 생성) |
 
-### HTTP 도구
+### MCP 도구
 
 | 메서드 | 경로 | 설명 |
 |--------|------|------|
-| `GET` | `/api/http-tools` | 네임스페이스 HTTP 도구 목록 |
-| `POST` | `/api/http-tools` | 도구 등록 |
-| `PUT` | `/api/http-tools/{id}` | 도구 수정 |
-| `DELETE` | `/api/http-tools/{id}` | 도구 삭제 |
-| `POST` | `/api/http-tools/{id}/test` | 도구 테스트 실행 |
+| `GET` | `/api/mcp-tools` | 네임스페이스 MCP 도구 목록 |
+| `POST` | `/api/mcp-tools` | 도구 등록 |
+| `PATCH` | `/api/mcp-tools/{id}` | 도구 수정 |
+| `PATCH` | `/api/mcp-tools/{id}/toggle` | 도구 활성/비활성 토글 |
+| `DELETE` | `/api/mcp-tools/{id}` | 도구 삭제 |
+| `POST` | `/api/mcp-tools/{id}/test` | 도구 테스트 실행 |
+| `POST` | `/api/mcp-tools/autocomplete` | 자연어 입력 → 도구 JSON 자동완성 |
+| `GET` | `/api/mcp-tools/logs` | 도구 호출 감사 로그 조회 |
 
 ---
 
