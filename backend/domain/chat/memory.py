@@ -136,7 +136,10 @@ async def _summarize_with_llm(messages: list, llm_provider) -> Optional[str]:
         f"{'사용자' if r['role'] == 'user' else '어시스턴트'}: {r['content']}" for r in messages
     )
     template = await load_prompt("conv_summarize", _CONV_SUMMARIZE_FALLBACK)
-    prompt = template.format(dialogue=dialogue)
+    try:
+        prompt = template.format(dialogue=dialogue)
+    except KeyError:
+        prompt = _CONV_SUMMARIZE_FALLBACK.format(dialogue=dialogue)
     try:
         summary, _ = await llm_provider.generate(context="", question=prompt)
         return summary.strip() or None
