@@ -5,6 +5,7 @@ from typing import AsyncIterator, Optional
 
 from agents.base import AgentBase
 from core.database import get_conn
+from core.config import settings
 from domain.chat import memory
 from domain.chat.helpers import (
     LLM_UNAVAILABLE_MSG,
@@ -16,6 +17,8 @@ from domain.knowledge import retrieval
 from domain.llm.base import resolve_system_prompt
 from domain.llm.factory import get_llm_provider
 from shared.embedding import embedding_service
+from shared import cache as sem_cache
+from shared import reranker
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +94,20 @@ class KnowledgeRagAgent(AgentBase):
 
             query_vec = await embedding_service.embed(search_question)
 
+            # ── Semantic Cache 조회 ──
+            cached = await sem_cache.get_cached(namespace, query_vec)
+            if cached:
+                await update_assistant_message(msg_id, cached["answer"], "completed")
+                yield {
+                    "type": "meta", "conversation_id": conversation_id, "message_id": msg_id,
+                    "mapped_term": cached.get("mapped_term"),
+                    "results": cached.get("results", []),
+                }
+                yield {"type": "token", "data": cached["answer"]}
+                await create_query_log(namespace, query, cached["answer"], bool(cached.get("results")), cached.get("mapped_term"), msg_id)
+                yield {"type": "done", "message_id": msg_id}
+                return
+
             yield {"type": "status", "step": "context", "message": "용어 매핑 및 대화 맥락 검색 중..."}
             glossary_match, history = await asyncio.gather(
                 retrieval.map_glossary_term(namespace, query_vec),
@@ -100,10 +117,13 @@ class KnowledgeRagAgent(AgentBase):
             enriched_query = f"{search_question} {mapped_term}" if mapped_term else search_question
 
             yield {"type": "status", "step": "search", "message": "관련 문서 검색 중..."}
-            results, fewshots = await asyncio.gather(
-                retrieval.search_knowledge(namespace, query_vec, enriched_query, w_vector, w_keyword, top_k, category),
+            # Re-Ranking: 후보를 top_k * 4배 확보 후 재정렬
+            candidate_k = max(top_k * 4, 12)
+            raw_results, fewshots = await asyncio.gather(
+                retrieval.search_knowledge(namespace, query_vec, enriched_query, w_vector, w_keyword, candidate_k, category),
                 retrieval.fetch_fewshots(namespace, query_vec),
             )
+            results = await reranker.rerank(enriched_query, raw_results, top_k)
 
             fs_section = retrieval.build_fewshot_section(fewshots)
             doc_context = retrieval.build_context(results)
@@ -153,6 +173,15 @@ class KnowledgeRagAgent(AgentBase):
             if new_inhouse_conv_id and new_inhouse_conv_id != inhouse_conv_id:
                 await update_inhouse_conv_id(conversation_id, new_inhouse_conv_id)
             await create_query_log(namespace, query, final_answer, has_results, mapped_term, msg_id)
+
+            # ── Semantic Cache 저장 (LLM 정상 응답 시만) ──
+            if has_results and final_answer != LLM_UNAVAILABLE_MSG:
+                await sem_cache.set_cached(namespace, query_vec, {
+                    "answer": final_answer,
+                    "mapped_term": mapped_term,
+                    "results": results_to_payload(results),
+                })
+
             yield {"type": "done", "message_id": msg_id}
 
         except Exception as e:

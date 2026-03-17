@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     knowledge_high_score: float = 0.8
     knowledge_mid_score: float = 0.55
 
+    # Semantic Cache (Redis)
+    redis_url: str = ""  # 비어있으면 캐시 비활성화. 예: redis://ops-redis:6379/0
+
+    # Re-Ranking (Cross-Encoder)
+    reranker_model: str = ""  # 비어있으면 비활성화. 예: cross-encoder/ms-marco-MiniLM-L-6-v2
+
     # JWT 인증
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
