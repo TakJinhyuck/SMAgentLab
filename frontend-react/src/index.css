@@ -159,6 +159,8 @@ body {
 [data-theme="light"] .bg-indigo-600\/20  { background-color: rgb(224 231 255 / 0.6) !important; }
 [data-theme="light"] .bg-indigo-500\/20  { background-color: rgb(224 231 255 / 0.5) !important; }
 [data-theme="light"] .bg-indigo-500\/10  { background-color: rgb(224 231 255 / 0.4) !important; }
+[data-theme="light"] .bg-indigo-500\/15  { background-color: rgb(224 231 255 / 0.55) !important; }
+[data-theme="light"] .border-indigo-500\/50 { border-color: rgb(99 102 241 / 0.5) !important; }
 [data-theme="light"] .text-indigo-300    { color: rgb(79 70 229) !important; }
 [data-theme="light"] .text-indigo-400    { color: rgb(79 70 229) !important; }
 [data-theme="light"] .text-indigo-400\/70 { color: rgb(79 70 229 / 0.85) !important; }
@@ -196,8 +198,11 @@ body {
 
 /* ── Amber ── */
 [data-theme="light"] .bg-amber-900\/40  { background-color: rgb(254 243 199 / 0.6) !important; }
+[data-theme="light"] .bg-amber-500\/10  { background-color: rgb(254 243 199 / 0.7) !important; }
+[data-theme="light"] .text-amber-300     { color: rgb(180 83 9) !important; }
 [data-theme="light"] .text-amber-400     { color: rgb(217 119 6) !important; }
 [data-theme="light"] .text-amber-400\/70 { color: rgb(217 119 6 / 0.85) !important; }
+[data-theme="light"] .border-amber-500\/30 { border-color: rgb(217 119 6 / 0.4) !important; }
 [data-theme="light"] .border-amber-700\/40 { border-color: rgb(252 211 77 / 0.4) !important; }
 [data-theme="light"] .border-amber-800\/40 { border-color: rgb(252 211 77 / 0.4) !important; }
 
