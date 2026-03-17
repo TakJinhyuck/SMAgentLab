@@ -13,6 +13,11 @@ class FewshotOut(BaseModel):
     created_by_user_id: Optional[int] = None
     created_by_username: Optional[str] = None
     created_at: str
+    status: str = 'active'
+
+
+class FewshotStatusUpdate(BaseModel):
+    status: str
 
 
 class FewshotCreate(BaseModel):

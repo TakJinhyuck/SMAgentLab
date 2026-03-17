@@ -5,6 +5,7 @@ from typing import AsyncIterator, Optional
 
 from agents.base import AgentBase
 from core.database import get_conn
+from core.config import settings
 from domain.chat import memory
 from domain.chat.helpers import (
     LLM_UNAVAILABLE_MSG,
@@ -16,6 +17,7 @@ from domain.knowledge import retrieval
 from domain.llm.base import resolve_system_prompt
 from domain.llm.factory import get_llm_provider
 from shared.embedding import embedding_service
+from shared import cache as sem_cache
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +92,22 @@ class KnowledgeRagAgent(AgentBase):
                 logger.info("멀티턴 검색 보강: '%s' → '%s'", query, search_question)
 
             query_vec = await embedding_service.embed(search_question)
+            # 캐시 전용: 한글 공백 정규화 후 embed (RAG 검색은 원본 query_vec 유지)
+            cache_vec = await embedding_service.embed(sem_cache.normalize_query(search_question))
+
+            # ── Semantic Cache 조회 ──
+            cached = await sem_cache.get_cached(namespace, cache_vec)
+            if cached:
+                await update_assistant_message(msg_id, cached["answer"], "completed")
+                yield {
+                    "type": "meta", "conversation_id": conversation_id, "message_id": msg_id,
+                    "mapped_term": cached.get("mapped_term"),
+                    "results": cached.get("results", []),
+                }
+                yield {"type": "token", "data": cached["answer"]}
+                await create_query_log(namespace, query, cached["answer"], bool(cached.get("results")), cached.get("mapped_term"), msg_id)
+                yield {"type": "done", "message_id": msg_id}
+                return
 
             yield {"type": "status", "step": "context", "message": "용어 매핑 및 대화 맥락 검색 중..."}
             glossary_match, history = await asyncio.gather(
@@ -153,6 +171,16 @@ class KnowledgeRagAgent(AgentBase):
             if new_inhouse_conv_id and new_inhouse_conv_id != inhouse_conv_id:
                 await update_inhouse_conv_id(conversation_id, new_inhouse_conv_id)
             await create_query_log(namespace, query, final_answer, has_results, mapped_term, msg_id)
+
+            # ── Semantic Cache 저장 (LLM 정상 응답 시만, 결과 유무 무관) ──
+            if final_answer != LLM_UNAVAILABLE_MSG:
+                await sem_cache.set_cached(namespace, cache_vec, {
+                    "answer": final_answer,
+                    "mapped_term": mapped_term,
+                    "results": results_to_payload(results),
+                    "query": query,
+                })
+
             yield {"type": "done", "message_id": msg_id}
 
         except Exception as e:

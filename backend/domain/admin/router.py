@@ -2,6 +2,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query as QueryParam
+from pydantic import BaseModel
 
 from core.database import get_conn, resolve_namespace_id
 from core.dependencies import get_current_user, get_current_admin, check_namespace_ownership
@@ -17,6 +18,7 @@ from domain.llm.factory import get_llm_provider, switch_provider, get_runtime_co
 from domain.llm.ollama import OllamaProvider
 from domain.llm.inhouse import InHouseLLMProvider
 from domain.knowledge.retrieval import get_thresholds, set_thresholds, get_search_defaults, set_search_defaults
+from shared import cache as sem_cache
 
 router = APIRouter(tags=["admin"])
 
@@ -500,3 +502,167 @@ async def update_search_defaults_config(body: SearchDefaultsUpdate, admin: dict 
         if k in updates and not 0.0 <= updates[k] <= 1.0:
             raise HTTPException(status_code=400, detail=f"{k}는 0~1 범위여야 합니다.")
     return set_search_defaults(updates)
+
+
+# ── Semantic Cache ────────────────────────────────────────────────────────────
+
+class CacheDeleteEntryRequest(BaseModel):
+    key: str
+
+
+class CacheConfigRequest(BaseModel):
+    enabled: bool | None = None
+    similarity_threshold: float | None = None
+    cache_ttl: int | None = None
+
+
+@router.get("/api/admin/cache/config")
+async def get_cache_config(admin: dict = Depends(get_current_admin)):
+    return {
+        "enabled": sem_cache.is_cache_enabled(),
+        "similarity_threshold": sem_cache.get_similarity_threshold(),
+        "cache_ttl": sem_cache.get_cache_ttl(),
+    }
+
+
+@router.put("/api/admin/cache/config")
+async def update_cache_config(body: CacheConfigRequest, admin: dict = Depends(get_current_admin)):
+    if body.enabled is not None:
+        sem_cache.set_cache_enabled(body.enabled)
+    if body.similarity_threshold is not None:
+        sem_cache.set_similarity_threshold(body.similarity_threshold)
+    if body.cache_ttl is not None:
+        sem_cache.set_cache_ttl(body.cache_ttl)
+    # DB 영속화
+    async with get_conn() as conn:
+        await sem_cache.save_config_to_db(
+            conn,
+            enabled=body.enabled,
+            similarity_threshold=sem_cache.get_similarity_threshold() if body.similarity_threshold is not None else None,
+            cache_ttl=sem_cache.get_cache_ttl() if body.cache_ttl is not None else None,
+        )
+    return {
+        "enabled": sem_cache.is_cache_enabled(),
+        "similarity_threshold": sem_cache.get_similarity_threshold(),
+        "cache_ttl": sem_cache.get_cache_ttl(),
+    }
+
+
+@router.get("/api/admin/cache/stats")
+async def get_cache_stats(
+    namespace: str = QueryParam(...),
+    admin: dict = Depends(get_current_admin),
+):
+    return await sem_cache.get_stats(namespace)
+
+
+@router.get("/api/admin/cache/entries")
+async def get_cache_entries(
+    namespace: str = QueryParam(...),
+    admin: dict = Depends(get_current_admin),
+):
+    return await sem_cache.get_entries(namespace)
+
+
+@router.delete("/api/admin/cache")
+async def invalidate_cache(
+    namespace: str = QueryParam(...),
+    admin: dict = Depends(get_current_admin),
+):
+    deleted = await sem_cache.invalidate_namespace(namespace)
+    return {"deleted": deleted}
+
+
+@router.delete("/api/admin/cache/entry")
+async def delete_cache_entry(
+    body: CacheDeleteEntryRequest,
+    admin: dict = Depends(get_current_admin),
+):
+    ok = await sem_cache.delete_entry(body.key)
+    return {"deleted": ok}
+
+
+# ── Glossary AI 용어 추천 ──────────────────────────────────────────────
+
+class GlossarySuggestApplyRequest(BaseModel):
+    namespace: str
+    term: str
+    description: str
+
+
+@router.post("/api/admin/glossary/suggest")
+async def suggest_glossary_terms(
+    namespace: str = QueryParam(...),
+    limit: int = QueryParam(default=50, ge=5, le=200),
+    admin: dict = Depends(get_current_admin),
+):
+    """미매핑 질문을 분석해 업무 용어를 LLM으로 추천."""
+    import json
+    import re
+
+    async with get_conn() as conn:
+        ns_id = await resolve_namespace_id(conn, namespace)
+        if ns_id is None:
+            raise HTTPException(status_code=404, detail="네임스페이스를 찾을 수 없습니다.")
+        rows = await conn.fetch(
+            "SELECT question FROM ops_query_log WHERE namespace_id = $1 AND mapped_term IS NULL ORDER BY created_at DESC LIMIT $2",
+            ns_id, limit,
+        )
+
+    questions = [r["question"] for r in rows]
+    if len(questions) < 3:
+        return {"suggestions": [], "message": "분석할 미매핑 질문이 부족합니다 (최소 3건 필요)"}
+
+    # 보안 필터 회피: 8자리+ 숫자 마스킹 + 질문당 80자 초과 자르기 (LLM 입력 크기 제한)
+    sanitized = [re.sub(r"\d{8,}", "[ID]", q)[:80] for q in questions]
+
+    system_prompt = "당신은 업무 용어를 추출하는 전문가입니다. 답변은 반드시 JSON 형식으로만 출력하세요."
+    question = f"""다음 질문 목록에서 자주 등장하거나 중요한 업무 용어를 최대 10개 추출해주세요.
+
+질문 목록:
+{chr(10).join(f'- {q}' for q in sanitized)}
+
+다음 JSON 형식으로만 답변하세요 (다른 텍스트 없이):
+[{{"term": "용어명", "description": "이 용어의 업무적 의미와 설명 (2-3문장)"}}]"""
+
+    from core.security import get_user_api_key
+    api_key = get_user_api_key(admin)
+
+    try:
+        answer, _ = await get_llm_provider().generate(
+            context="",
+            question=question,
+            system_prompt=system_prompt,
+            api_key=api_key,
+        )
+        # 마크다운 코드 블록 제거
+        cleaned = re.sub(r"```(?:json)?\s*", "", answer).replace("```", "").strip()
+        if not cleaned:
+            suggestions = []
+        else:
+            suggestions = json.loads(cleaned)
+            if not isinstance(suggestions, list):
+                suggestions = []
+    except Exception:
+        suggestions = []
+
+    return {"suggestions": suggestions, "message": f"{len(questions)}건의 질문에서 용어 추출 완료"}
+
+
+@router.post("/api/admin/glossary/suggest/apply")
+async def apply_glossary_suggestion(
+    body: GlossarySuggestApplyRequest,
+    admin: dict = Depends(get_current_admin),
+):
+    """AI 추천 용어를 용어집에 등록."""
+    from domain.knowledge import service as knowledge_service
+
+    try:
+        result = await knowledge_service.create_glossary(
+            body.namespace, body.term, body.description,
+            created_by_part=admin.get("part"),
+            created_by_user_id=admin.get("id"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return result

@@ -1,11 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit2, Trash2, X, ChevronDown, ChevronUp, BookOpen } from 'lucide-react';
-import { getNamespaces, getNamespacesDetail } from '../../api/namespaces';
-import { getGlossary, createGlossaryItem, updateGlossaryItem, deleteGlossaryItem } from '../../api/knowledge';
-import { useAppStore } from '../../store/useAppStore';
-import { useAuthStore } from '../../store/useAuthStore';
-import { sortNamespacesByUserPart } from '../../utils/sortNamespaces';
+import { Plus, Edit2, Trash2, X, ChevronDown, ChevronUp, BookOpen, Wand2 } from 'lucide-react';
+import { getGlossary, createGlossaryItem, updateGlossaryItem, deleteGlossaryItem, suggestGlossaryTerms, applyGlossarySuggestion } from '../../api/knowledge';
+import { useNamespaceAccess } from '../../utils/useNamespaceAccess';
 import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
 import { Badge } from '../ui/Badge';
@@ -14,47 +11,25 @@ import type { GlossaryItem } from '../../types';
 interface GlossaryFormData { term: string; description: string; }
 const defaultForm: GlossaryFormData = { term: '', description: '' };
 
+interface GlossarySuggestion { term: string; description: string; }
+
 export function GlossaryTable() {
   const qc = useQueryClient();
-  const { namespace: storeNamespace } = useAppStore();
-  const user = useAuthStore((s) => s.user);
-  const [selectedNs, setSelectedNs] = useState(storeNamespace || '');
+  const { selectedNs, setSelectedNs, canModifyNs, sortedNamespaces, user } = useNamespaceAccess();
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
-  // 파트 관리에서 네비게이션 시 스토어 namespace 변경을 반영
-  useEffect(() => {
-    if (storeNamespace) setSelectedNs(storeNamespace);
-  }, [storeNamespace]);
-
-  const { data: nsDetails = [] } = useQuery({
-    queryKey: ['namespaces-detail'],
-    queryFn: getNamespacesDetail,
-    staleTime: 30_000,
-  });
-
-  const nsOwnerPart = nsDetails.find((n) => n.name === selectedNs)?.owner_part;
-  // owner_part 없으면 공통(모두 가능), 있으면 같은 파트 or admin
-  const canModifyNs = user?.role === 'admin' || !nsOwnerPart || nsOwnerPart === user?.part;
+  // AI 추천 관련 상태
+  const [showSuggest, setShowSuggest] = useState(false);
+  const [suggestions, setSuggestions] = useState<GlossarySuggestion[]>([]);
+  const [suggestMessage, setSuggestMessage] = useState('');
+  const [appliedTerms, setAppliedTerms] = useState<Set<string>>(new Set());
+  const [suggestLimit, setSuggestLimit] = useState(50);
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<GlossaryFormData>(defaultForm);
   const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState<GlossaryFormData>(defaultForm);
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
-
-  const { data: namespaces = [] } = useQuery({
-    queryKey: ['namespaces'],
-    queryFn: getNamespaces,
-    staleTime: 30_000,
-  });
-  const sortedNamespaces = sortNamespacesByUserPart(namespaces, user?.part, nsDetails);
-
-  // 삭제된 네임스페이스 선택 상태 자동 리셋
-  useEffect(() => {
-    if (selectedNs && namespaces.length > 0 && !namespaces.includes(selectedNs)) {
-      setSelectedNs('');
-    }
-  }, [namespaces, selectedNs]);
 
   const { data: items = [], isLoading, error } = useQuery({
     queryKey: ['glossary', selectedNs],
@@ -79,10 +54,36 @@ export function GlossaryTable() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['glossary', selectedNs] }); qc.invalidateQueries({ queryKey: ['stats-ns', selectedNs] }); setDeleteTarget(null); },
   });
 
+  const suggestMutation = useMutation({
+    mutationFn: () => suggestGlossaryTerms(selectedNs, suggestLimit),
+    onSuccess: (data) => {
+      setSuggestions(data.suggestions);
+      setSuggestMessage(data.message);
+      setAppliedTerms(new Set());
+    },
+  });
+
+  const applyMutation = useMutation({
+    mutationFn: ({ term, description }: { term: string; description: string }) =>
+      applyGlossarySuggestion(selectedNs, term, description),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ['glossary', selectedNs] });
+      qc.invalidateQueries({ queryKey: ['stats-ns', selectedNs] });
+      setAppliedTerms((prev) => new Set([...prev, variables.term]));
+    },
+  });
+
   const startEdit = (item: GlossaryItem) => {
     setEditingId(item.id);
     setEditForm({ term: item.term, description: item.description });
     setExpandedId(item.id);
+  };
+
+  const handleOpenSuggest = () => {
+    setSuggestions([]);
+    setSuggestMessage('');
+    setAppliedTerms(new Set());
+    setShowSuggest(true);
   };
 
   return (
@@ -92,9 +93,16 @@ export function GlossaryTable() {
           용어집
           {selectedNs && <span className="text-sm font-normal text-slate-500 ml-2">({selectedNs})</span>}
         </h2>
-        <Button variant="primary" size="sm" onClick={() => setShowCreate(true)} disabled={!selectedNs || !canModifyNs}>
-          <Plus className="w-4 h-4" />용어 추가
-        </Button>
+        <div className="flex items-center gap-2">
+          {selectedNs && canModifyNs && (
+            <Button variant="secondary" size="sm" onClick={handleOpenSuggest}>
+              <Wand2 className="w-4 h-4" />AI 용어 추천
+            </Button>
+          )}
+          <Button variant="primary" size="sm" onClick={() => setShowCreate(true)} disabled={!selectedNs || !canModifyNs}>
+            <Plus className="w-4 h-4" />용어 추가
+          </Button>
+        </div>
       </div>
 
       {/* Namespace selector */}
@@ -217,6 +225,89 @@ export function GlossaryTable() {
           <div className="flex gap-2 justify-end">
             <Button variant="secondary" size="sm" onClick={() => setDeleteTarget(null)}>취소</Button>
             <Button variant="danger" size="sm" loading={deleteMutation.isPending} onClick={() => deleteTarget !== null && deleteMutation.mutate(deleteTarget)}>삭제</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* AI 용어 추천 Modal */}
+      <Modal isOpen={showSuggest} onClose={() => setShowSuggest(false)} title="AI 용어 추천" maxWidth="max-w-2xl">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-xs text-slate-400">미매핑 질문을 분석해 업무 용어를 자동 추출합니다.</p>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <label className="text-xs text-slate-400 whitespace-nowrap">최대 질문 수</label>
+              <input
+                type="number"
+                min={5}
+                max={200}
+                value={suggestLimit}
+                onChange={(e) => setSuggestLimit(Math.min(200, Math.max(5, Number(e.target.value))))}
+                className="w-16 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+              />
+              <Button
+                variant="primary" size="sm"
+                loading={suggestMutation.isPending}
+                onClick={() => suggestMutation.mutate()}
+              >
+                <Wand2 className="w-3.5 h-3.5" />분석 시작
+              </Button>
+            </div>
+          </div>
+
+          {suggestMutation.isPending && (
+            <div className="flex items-center gap-2 py-4 text-slate-400 text-sm">
+              <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+              AI가 미매핑 질문을 분석 중...
+            </div>
+          )}
+
+          {suggestMessage && !suggestMutation.isPending && (
+            <p className="text-xs text-indigo-400 bg-indigo-900/20 border border-indigo-700/30 rounded-lg px-3 py-2">
+              {suggestMessage}
+            </p>
+          )}
+
+          {suggestMutation.isError && (
+            <p className="text-xs text-rose-400">{String(suggestMutation.error)}</p>
+          )}
+
+          {suggestions.length > 0 && (
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {suggestions.map((s) => {
+                const isApplied = appliedTerms.has(s.term);
+                return (
+                  <div
+                    key={s.term}
+                    className={`flex items-start gap-3 bg-slate-800 border rounded-xl px-4 py-3 transition-colors ${
+                      isApplied ? 'border-emerald-700/50 opacity-60' : 'border-slate-700'
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-200">{s.term}</p>
+                      <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{s.description}</p>
+                    </div>
+                    <Button
+                      variant={isApplied ? 'secondary' : 'primary'}
+                      size="sm"
+                      disabled={isApplied || applyMutation.isPending}
+                      onClick={() => !isApplied && applyMutation.mutate({ term: s.term, description: s.description })}
+                    >
+                      {isApplied ? '등록됨' : '등록'}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {suggestions.length === 0 && suggestMessage && !suggestMutation.isPending && (
+            <div className="text-center py-6 text-slate-500 text-sm">
+              추출된 용어가 없습니다.
+            </div>
+          )}
+
+          <div className="flex justify-end pt-2">
+            <Button variant="ghost" size="sm" onClick={() => setShowSuggest(false)}>닫기</Button>
           </div>
         </div>
       </Modal>

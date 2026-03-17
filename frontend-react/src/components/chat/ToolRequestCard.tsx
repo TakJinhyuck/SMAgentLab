@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Globe, Check, X, AlertCircle, ArrowRight, Edit3 } from 'lucide-react';
-import type { SSEToolRequestEvent, HttpToolParam } from '../../types';
+import type { SSEToolRequestEvent, McpToolParam } from '../../types';
 
 interface ToolRequestCardProps {
   event: SSEToolRequestEvent;
@@ -31,7 +31,7 @@ export function ToolRequestCard({ event, onApprove, onSelectTool, onReject, onFa
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           <span className="text-sm font-medium">{event.message}</span>
         </div>
-        <p className="text-xs text-slate-500">관리자에게 HTTP 도구 등록을 요청하세요.</p>
+        <p className="text-xs text-slate-500">관리자에게 MCP 도구 등록을 요청하세요.</p>
       </div>
     );
   }
@@ -93,7 +93,7 @@ export function ToolRequestCard({ event, onApprove, onSelectTool, onReject, onFa
   // ── 파라미터 입력 / 실행 확인 ──
   const isMissing = event.action === 'missing_params';
   const missingParams = event.missing_params || [];
-  const paramSchema: HttpToolParam[] = event.param_schema || [];
+  const paramSchema: McpToolParam[] = event.param_schema || [];
 
   // param_schema가 있으면 전체 파라미터 목록 사용, 없으면 기존 params 키 사용
   const allParamKeys: string[] = paramSchema.length > 0
@@ -225,7 +225,7 @@ export function ToolRequestCard({ event, onApprove, onSelectTool, onReject, onFa
   );
 }
 
-function _getParamHint(name: string, schema: HttpToolParam[]): string {
+function _getParamHint(name: string, schema: McpToolParam[]): string {
   const param = schema.find((p) => p.name === name);
   if (!param) return `${name} 값을 입력하세요`;
   if (param.example) return `예: ${param.example}`;

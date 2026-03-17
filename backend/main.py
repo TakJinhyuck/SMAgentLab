@@ -17,19 +17,20 @@ from domain.knowledge.router import router as knowledge_router
 from domain.fewshot.router import router as fewshot_router
 from domain.feedback.router import router as feedback_router
 from domain.admin.router import router as admin_router
-from domain.http_tool.router import router as http_tool_router
+from domain.mcp_tool.router import router as mcp_tool_router
 from domain.prompt.router import router as prompt_router
 
+from shared import cache as sem_cache
 from agents.base import AgentRegistry
 from agents.knowledge_rag.agent import KnowledgeRagAgent
-from agents.http_tool.agent import HttpToolAgent
+from agents.mcp_tool.agent import McpToolAgent
 
 logger = logging.getLogger(__name__)
 
 _ROUTERS = [
     auth_router, chat_router, knowledge_router,
     fewshot_router, feedback_router, admin_router,
-    http_tool_router,
+    mcp_tool_router,
     prompt_router,
 ]
 
@@ -196,6 +197,9 @@ async def _run_migrations() -> None:
             await conn.execute(f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS created_by_part VARCHAR(100)")
             await conn.execute(f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS created_by_user_id INT")
 
+        # ── ops_fewshot status 컬럼 추가 ──
+        await conn.execute("ALTER TABLE ops_fewshot ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active'")
+
         # ── 기존 ops_namespace 데이터 보충 (namespace 컬럼이 있는 경우만) ──
         await conn.execute("""
             DO $$ DECLARE
@@ -308,15 +312,16 @@ async def _run_migrations() -> None:
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_fewshot_ns_id ON ops_fewshot (namespace_id)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_feedback_ns_id ON ops_feedback (namespace_id)")
 
-        # ── HTTP 도구 테이블 ──────────────────────────────────────────────
+        # ── MCP 도구 테이블 (ops_http_tool 하위 호환 마이그레이션) ──────────
         await conn.execute("""
-            CREATE TABLE IF NOT EXISTS ops_http_tool (
+            CREATE TABLE IF NOT EXISTS ops_mcp_tool (
                 id              SERIAL PRIMARY KEY,
                 namespace_id    INT NOT NULL REFERENCES ops_namespace(id) ON DELETE CASCADE,
                 name            VARCHAR(100) NOT NULL,
                 description     TEXT NOT NULL DEFAULT '',
                 method          VARCHAR(10) NOT NULL DEFAULT 'GET',
-                url             TEXT NOT NULL,
+                hub_base_url    TEXT NOT NULL DEFAULT '',
+                tool_path       TEXT NOT NULL DEFAULT '',
                 headers         JSONB NOT NULL DEFAULT '{}',
                 param_schema    JSONB NOT NULL DEFAULT '[]',
                 response_example JSONB,
@@ -328,7 +333,56 @@ async def _run_migrations() -> None:
                 updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
             )
         """)
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_http_tool_ns_active ON ops_http_tool (namespace_id, is_active)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_mcp_tool_ns_active ON ops_mcp_tool (namespace_id, is_active)")
+        # ops_http_tool이 존재하면 데이터 이전 후 삭제
+        await conn.execute("""
+            INSERT INTO ops_mcp_tool (namespace_id, name, description, method, hub_base_url, tool_path, headers,
+                param_schema, response_example, timeout_sec, max_response_kb, is_active, created_by_user_id, created_at, updated_at)
+            SELECT namespace_id, name, description, method, '', url, headers,
+                param_schema, response_example, timeout_sec, max_response_kb, is_active, created_by_user_id, created_at, updated_at
+            FROM ops_http_tool
+            WHERE NOT EXISTS (SELECT 1 FROM ops_mcp_tool WHERE ops_mcp_tool.namespace_id = ops_http_tool.namespace_id AND ops_mcp_tool.name = ops_http_tool.name)
+        """)
+
+        # ── MCP 도구 감사 로그 테이블 ──────────────────────────────────────
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS ops_mcp_tool_log (
+                id              SERIAL PRIMARY KEY,
+                tool_id         INT REFERENCES ops_mcp_tool(id) ON DELETE SET NULL,
+                tool_name       VARCHAR(100),
+                user_id         INT REFERENCES ops_user(id) ON DELETE SET NULL,
+                namespace_id    INT REFERENCES ops_namespace(id),
+                conversation_id INT,
+                params          JSONB,
+                response_status INT,
+                response_kb     FLOAT,
+                duration_ms     INT,
+                error           TEXT,
+                called_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_mcp_tool_log_ns ON ops_mcp_tool_log (namespace_id, called_at DESC)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_mcp_tool_log_tool ON ops_mcp_tool_log (tool_id, called_at DESC)")
+        # 기존 테이블에 컬럼 추가 (없으면 추가)
+        await conn.execute("ALTER TABLE ops_mcp_tool_log ADD COLUMN IF NOT EXISTS request_url TEXT")
+        await conn.execute("ALTER TABLE ops_mcp_tool_log ADD COLUMN IF NOT EXISTS http_method VARCHAR(10)")
+
+        # ── 시스템 설정 테이블 ────────────────────────────────────────────
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS ops_system_config (
+                key         VARCHAR(100) PRIMARY KEY,
+                value       TEXT NOT NULL,
+                updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        # 캐시 설정 기본값 시드 (최초 1회만)
+        await conn.execute("""
+            INSERT INTO ops_system_config (key, value) VALUES
+            ('cache_enabled', 'true'),
+            ('cache_similarity_threshold', '0.88'),
+            ('cache_ttl', '1800')
+            ON CONFLICT (key) DO NOTHING
+        """)
 
         # ── 프롬프트 관리 테이블 ──────────────────────────────────────────
         await conn.execute("""
@@ -346,9 +400,9 @@ async def _run_migrations() -> None:
         await conn.execute("""
             INSERT INTO ops_prompt (func_key, func_name, content, description) VALUES
             ('chat_system', 'RAG 채팅 시스템', $1, 'RAG 기반 지식 검색 채팅의 시스템 프롬프트'),
-            ('tool_select', 'HTTP 도구 선택', $2, 'HTTP 도구를 선택하고 파라미터를 추출하는 프롬프트'),
-            ('tool_answer', 'HTTP 응답 답변', $3, 'HTTP API 응답 데이터 기반으로 답변을 생성하는 프롬프트'),
-            ('autocomplete', '도구 등록 자동완성', $4, 'HTTP 도구 등록 시 자연어→JSON 변환 프롬프트')
+            ('tool_select', 'MCP 도구 선택', $2, 'MCP 도구를 선택하고 파라미터를 추출하는 프롬프트'),
+            ('tool_answer', 'MCP 응답 답변', $3, 'MCP API 응답 데이터 기반으로 답변을 생성하는 프롬프트'),
+            ('autocomplete', '도구 등록 자동완성', $4, 'MCP 도구 등록 시 자연어→JSON 변환 프롬프트')
             ON CONFLICT (func_key) DO NOTHING
         """,
             # chat_system
@@ -394,11 +448,13 @@ async def _run_migrations() -> None:
 async def lifespan(_app: FastAPI):
     await init_pool()
     await _run_migrations()
+    async with get_conn() as conn:
+        await sem_cache.load_config_from_db(conn)
     embedding_service.load()
 
     # ── 에이전트 등록 ──
     AgentRegistry.register(KnowledgeRagAgent())
-    AgentRegistry.register(HttpToolAgent())
+    AgentRegistry.register(McpToolAgent())
 
     llm_ok = await get_llm_provider().health_check()
     level, msg = ("INFO", "연결 확인됨") if llm_ok else ("WARNING", "연결 불가 — LLM 기능 제한")

@@ -48,8 +48,8 @@ async def submit_feedback(body: FeedbackCreate, user: dict = Depends(get_current
             await conn.execute(
                 """
                 INSERT INTO ops_fewshot (namespace_id, question, answer, knowledge_id, embedding,
-                                         created_by_part, created_by_user_id)
-                VALUES ($1, $2, $3, $4, $5::vector, $6, $7)
+                                         created_by_part, created_by_user_id, status)
+                VALUES ($1, $2, $3, $4, $5::vector, $6, $7, 'candidate')
                 """,
                 ns_id, body.question, body.answer, body.knowledge_id,
                 str(embedding), user["part"], user["id"],

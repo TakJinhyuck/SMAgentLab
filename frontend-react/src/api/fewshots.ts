@@ -29,3 +29,10 @@ export async function searchFewshots(namespace: string, question: string): Promi
     body: JSON.stringify({ namespace, question }),
   });
 }
+
+export async function updateFewshotStatus(id: number, status: string): Promise<{ status: string }> {
+  return await apiFetch<{ status: string }>(`/fewshots/${id}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+}

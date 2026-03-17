@@ -95,3 +95,16 @@ export async function deleteGlossaryItem(id: number): Promise<void> {
     throw err;
   }
 }
+
+// Glossary AI Suggestions
+
+export async function suggestGlossaryTerms(namespace: string, limit: number = 50): Promise<{ suggestions: Array<{ term: string; description: string }>; message: string }> {
+  return apiFetch(`/admin/glossary/suggest?namespace=${encodeURIComponent(namespace)}&limit=${limit}`, { method: 'POST' });
+}
+
+export async function applyGlossarySuggestion(namespace: string, term: string, description: string): Promise<void> {
+  return apiFetch('/admin/glossary/suggest/apply', {
+    method: 'POST',
+    body: JSON.stringify({ namespace, term, description }),
+  });
+}

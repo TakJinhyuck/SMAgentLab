@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, X } from 'lucide-react';
 import {
@@ -7,10 +7,8 @@ import {
   updateKnowledge,
   deleteKnowledge,
 } from '../../api/knowledge';
-import { getNamespaces, getNamespacesDetail, getCategories } from '../../api/namespaces';
-import { useAppStore } from '../../store/useAppStore';
-import { useAuthStore } from '../../store/useAuthStore';
-import { sortNamespacesByUserPart } from '../../utils/sortNamespaces';
+import { getCategories } from '../../api/namespaces';
+import { useNamespaceAccess } from '../../utils/useNamespaceAccess';
 import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
 import { Badge } from '../ui/Badge';
@@ -50,22 +48,7 @@ function weightClass(w: number) {
 
 export function KnowledgeTable() {
   const qc = useQueryClient();
-  const { namespace: storeNamespace } = useAppStore();
-  const user = useAuthStore((s) => s.user);
-  const [selectedNs, setSelectedNs] = useState(storeNamespace || '');
-
-  useEffect(() => {
-    if (storeNamespace) setSelectedNs(storeNamespace);
-  }, [storeNamespace]);
-
-  const { data: nsDetails = [] } = useQuery({
-    queryKey: ['namespaces-detail'],
-    queryFn: getNamespacesDetail,
-    staleTime: 30_000,
-  });
-
-  const nsOwnerPart = nsDetails.find((n) => n.name === selectedNs)?.owner_part;
-  const canModifyNs = user?.role === 'admin' || !nsOwnerPart || nsOwnerPart === user?.part;
+  const { selectedNs, setSelectedNs, canModifyNs, sortedNamespaces, user } = useNamespaceAccess();
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<KnowledgeFormData>(defaultForm);
@@ -75,13 +58,6 @@ export function KnowledgeTable() {
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [categoryFilter, setCategoryFilter] = useState('');
 
-  const { data: namespaces = [] } = useQuery({
-    queryKey: ['namespaces'],
-    queryFn: getNamespaces,
-    staleTime: 30_000,
-  });
-  const sortedNamespaces = sortNamespacesByUserPart(namespaces, user?.part, nsDetails);
-
   const { data: categories = [] } = useQuery({
     queryKey: ['categories', selectedNs],
     queryFn: () => getCategories(selectedNs),
@@ -90,12 +66,6 @@ export function KnowledgeTable() {
   });
 
   const categoryNames = categories.map((c) => c.name);
-
-  useEffect(() => {
-    if (selectedNs && namespaces.length > 0 && !namespaces.includes(selectedNs)) {
-      setSelectedNs('');
-    }
-  }, [namespaces, selectedNs]);
 
   const { data: items = [], isLoading, error } = useQuery({
     queryKey: ['knowledge', selectedNs],

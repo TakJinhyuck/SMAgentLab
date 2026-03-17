@@ -19,6 +19,15 @@ services:
       timeout: 5s
       retries: 10
 
+  # ─── Redis (Semantic Cache) ───────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: ops-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redisdata:/data
+
   # ─── FastAPI Backend ─────────────────────────────────────────
   backend:
     build:
@@ -38,12 +47,15 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-this-secret-key-in-production}
       FERNET_SECRET_KEY: ${FERNET_SECRET_KEY:-}
       ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD:-1111}
+      REDIS_URL: redis://ops-redis:6379/0
       # 나머지 설정은 backend/core/config.py 코드 기본값 사용
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
     volumes:
       # Sentence-Transformers 모델 캐시를 호스트와 공유 (재다운로드 방지)
       - model-cache:/root/.cache/huggingface
@@ -63,3 +75,4 @@ services:
 volumes:
   pgdata:
   model-cache:
+  redisdata:

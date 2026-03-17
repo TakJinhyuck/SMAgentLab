@@ -1,11 +1,11 @@
 # Ops-Navigator 테이블 정의서
 
-> **Version**: 3.1
+> **Version**: 3.2
 > **DBMS**: PostgreSQL 16 + pgvector
 > **Extensions**: `vector`, `pg_trgm`
 > **벡터 차원**: 768 (paraphrase-multilingual-mpnet-base-v2)
-> **작성일**: 2026-03-11
-> **DDL 위치**: `init/01-init.sql`
+> **작성일**: 2026-03-17
+> **DDL 위치**: `init/01-init.sql` + `main.py` lifespan 마이그레이션
 
 ---
 
@@ -24,10 +24,12 @@
 11. [ops_feedback](#11-ops_feedback)
 12. [ops_fewshot](#12-ops_fewshot)
 13. [ops_conv_summary](#13-ops_conv_summary)
-14. [ops_http_tool](#14-ops_http_tool)
-15. [ops_prompt](#15-ops_prompt)
-16. [트리거 및 함수](#16-트리거-및-함수)
-17. [마이그레이션](#17-마이그레이션)
+14. [ops_mcp_tool](#14-ops_mcp_tool)
+15. [ops_mcp_tool_log](#15-ops_mcp_tool_log)
+16. [ops_prompt](#16-ops_prompt)
+17. [ops_system_config](#17-ops_system_config)
+18. [트리거 및 함수](#18-트리거-및-함수)
+19. [마이그레이션](#19-마이그레이션)
 
 ---
 
@@ -61,12 +63,15 @@ ops_part
              ├─── ops_conversation        (namespace_id FK CASCADE)
              ├─── ops_feedback            (namespace_id FK CASCADE)
              ├─── ops_query_log           (namespace_id FK CASCADE)
-             └─── ops_http_tool           (namespace_id FK CASCADE)
+             ├─── ops_mcp_tool            (namespace_id FK CASCADE)
+             │        │
+             │        └─── ops_mcp_tool_log  (tool_id FK SET NULL, namespace_id FK)
 
-ops_prompt   (namespace 독립 — func_key 기반 전역 프롬프트 관리)
+ops_prompt        (namespace 독립 — func_key 기반 전역 프롬프트 관리)
+ops_system_config (시스템 전역 설정 — key-value, 재시작 후에도 영속)
 ```
 
-**테이블 수**: 14개
+**테이블 수**: 17개
 **FK 관계**: CASCADE 12건 (namespace_id 8건 + conversation 2건 + user 1건 + part 1건), SET NULL 3건
 
 ---
@@ -393,25 +398,28 @@ final_score = (w_vector * v_score + w_keyword * k_score) * (1 + base_weight)
 
 ---
 
-## 14. ops_http_tool
+## 14. ops_mcp_tool
 
-**목적**: 네임스페이스별 외부 HTTP API 도구를 관리한다. HttpToolAgent가 도구 선택·파라미터 검증·HTTP 호출에 활용한다.
+**목적**: 네임스페이스별 외부 HTTP/MCP API 도구를 관리한다. McpToolAgent가 도구 선택·파라미터 검증·HTTP 호출에 활용한다.
 
 | # | 컬럼명 | 데이터 타입 | NULL | 기본값 | 제약조건 | 설명 |
 |---|--------|-----------|------|--------|---------|------|
 | 1 | `id` | SERIAL | NO | auto | PK | 고유 식별자 |
 | 2 | `namespace_id` | INT | NO | - | FK → ops_namespace(id) ON DELETE CASCADE | 소속 네임스페이스 ID |
-| 3 | `name` | VARCHAR(200) | NO | - | - | 도구 이름 |
-| 4 | `description` | TEXT | YES | NULL | - | 도구 설명 (LLM 도구 선택에 활용) |
-| 5 | `method` | VARCHAR(10) | NO | - | - | HTTP 메서드 (`GET` \| `POST` 등) |
-| 6 | `url` | TEXT | NO | - | - | 호출 대상 URL |
-| 7 | `headers` | JSONB | YES | NULL | - | 요청 헤더 (Authorization 등) |
-| 8 | `param_schema` | JSONB | YES | NULL | - | 파라미터 스키마 배열 (name, type, required, description, example) |
-| 9 | `response_example` | TEXT | YES | NULL | - | 응답 예시 (LLM 컨텍스트 품질 향상용) |
-| 10 | `timeout_sec` | INT | YES | `10` | - | HTTP 호출 타임아웃(초) |
-| 11 | `max_response_kb` | INT | YES | `50` | - | 응답 크기 제한(KB) |
-| 12 | `is_active` | BOOLEAN | NO | `TRUE` | - | 활성 여부 (채팅에서 비활성 도구 제외) |
-| 13 | `created_at` | TIMESTAMPTZ | NO | `NOW()` | - | 생성일시 |
+| 3 | `name` | VARCHAR(100) | NO | - | - | 도구 이름 |
+| 4 | `description` | TEXT | NO | `''` | - | 도구 설명 (LLM 도구 선택에 활용) |
+| 5 | `method` | VARCHAR(10) | NO | `'GET'` | - | HTTP 메서드 (`GET` \| `POST` 등) |
+| 6 | `hub_base_url` | TEXT | NO | `''` | - | 허브 베이스 URL (도구 레벨) |
+| 7 | `tool_path` | TEXT | NO | `''` | - | 도구 경로 (`hub_base_url` + `tool_path` = 최종 URL) |
+| 8 | `headers` | JSONB | NO | `{}` | - | 요청 헤더 (Authorization 등) |
+| 9 | `param_schema` | JSONB | NO | `[]` | - | 파라미터 스키마 배열 (name, type, required, description, example) |
+| 10 | `response_example` | JSONB | YES | NULL | - | 응답 예시 (LLM 컨텍스트 품질 향상용) |
+| 11 | `timeout_sec` | INT | NO | `10` | - | HTTP 호출 타임아웃(초) |
+| 12 | `max_response_kb` | INT | NO | `50` | - | 응답 크기 제한(KB) |
+| 13 | `is_active` | BOOLEAN | NO | `TRUE` | - | 활성 여부 (채팅에서 비활성 도구 제외) |
+| 14 | `created_by_user_id` | INT | YES | NULL | - | 등록 사용자 ID |
+| 15 | `created_at` | TIMESTAMPTZ | NO | `NOW()` | - | 생성일시 |
+| 16 | `updated_at` | TIMESTAMPTZ | NO | `NOW()` | - | 수정일시 |
 
 **param_schema 요소 구조** (JSONB 배열):
 ```json
@@ -427,7 +435,28 @@ final_score = (w_vector * v_score + w_keyword * k_score) * (1 + base_weight)
 
 ---
 
-## 15. ops_prompt
+## 15. ops_mcp_tool_log
+
+**목적**: MCP 도구 호출 감사 로그. 호출 성공/실패, 응답 크기, 소요 시간을 기록한다.
+
+| # | 컬럼명 | 데이터 타입 | NULL | 기본값 | 제약조건 | 설명 |
+|---|--------|-----------|------|--------|---------|------|
+| 1 | `id` | SERIAL | NO | auto | PK | 고유 식별자 |
+| 2 | `tool_id` | INT | YES | NULL | FK → ops_mcp_tool(id) ON DELETE SET NULL | 호출 도구 ID |
+| 3 | `tool_name` | VARCHAR(100) | YES | NULL | - | 도구 이름 (도구 삭제 후에도 보존) |
+| 4 | `user_id` | INT | YES | NULL | FK → ops_user(id) ON DELETE SET NULL | 호출 사용자 ID |
+| 5 | `namespace_id` | INT | YES | NULL | FK → ops_namespace(id) | 소속 네임스페이스 ID |
+| 6 | `conversation_id` | INT | YES | NULL | - | 대화 ID |
+| 7 | `params` | JSONB | YES | NULL | - | 호출 파라미터 |
+| 8 | `response_status` | INT | YES | NULL | - | HTTP 응답 코드 |
+| 9 | `response_kb` | FLOAT | YES | NULL | - | 응답 크기(KB) |
+| 10 | `duration_ms` | INT | YES | NULL | - | 호출 소요 시간(ms) |
+| 11 | `error` | TEXT | YES | NULL | - | 오류 메시지 |
+| 12 | `called_at` | TIMESTAMPTZ | NO | `NOW()` | - | 호출 일시 |
+
+---
+
+## 16. ops_prompt
 
 **목적**: LLM 프롬프트 텍스트를 DB에서 관리한다. Admin UI에서 실시간 편집 가능하며, 코드 배포 없이 프롬프트 튜닝이 가능하다.
 
@@ -435,17 +464,43 @@ final_score = (w_vector * v_score + w_keyword * k_score) * (1 + base_weight)
 |---|--------|-----------|------|--------|---------|------|
 | 1 | `id` | SERIAL | NO | auto | PK | 고유 식별자 |
 | 2 | `func_key` | VARCHAR(100) | NO | - | UNIQUE | 프롬프트 식별 키 |
-| 3 | `content` | TEXT | NO | - | - | 프롬프트 내용 |
-| 4 | `description` | TEXT | YES | NULL | - | 용도 설명 |
-| 5 | `updated_at` | TIMESTAMPTZ | NO | `NOW()` | - | 마지막 수정일시 |
+| 3 | `func_name` | VARCHAR(200) | NO | - | - | 프롬프트 표시명 |
+| 4 | `content` | TEXT | NO | `''` | - | 프롬프트 내용 |
+| 5 | `description` | TEXT | NO | `''` | - | 용도 설명 |
+| 6 | `created_at` | TIMESTAMPTZ | NO | `NOW()` | - | 생성일시 |
+| 7 | `updated_at` | TIMESTAMPTZ | NO | `NOW()` | - | 마지막 수정일시 |
 
 **조회 방식**: `get_prompt(func_key, fallback)` — DB에 있으면 DB 값, 없으면 코드 내 fallback 사용. 결과는 인메모리 캐시, 편집 시 자동 무효화.
 
 **주요 func_key**:
 | func_key | 설명 |
 |----------|------|
-| `tool_select` | HttpToolAgent 도구 선택 시스템 프롬프트 |
-| `tool_answer` | HTTP 응답 기반 LLM 답변 시스템 프롬프트 |
+| `chat_system` | RAG 채팅 시스템 프롬프트 |
+| `tool_select` | McpToolAgent 도구 선택 시스템 프롬프트 |
+| `tool_answer` | MCP 응답 기반 LLM 답변 시스템 프롬프트 |
+| `autocomplete` | 도구 등록 자동완성 (자연어→JSON 변환) |
+
+---
+
+## 17. ops_system_config
+
+**목적**: 시스템 전역 설정을 DB에서 관리한다. 재시작 후에도 설정이 유지되며, 런타임 변경 즉시 적용된다.
+
+| # | 컬럼명 | 데이터 타입 | NULL | 기본값 | 제약조건 | 설명 |
+|---|--------|-----------|------|--------|---------|------|
+| 1 | `key` | VARCHAR(100) | NO | - | PK | 설정 키 |
+| 2 | `value` | TEXT | NO | - | - | 설정 값 (문자열) |
+| 3 | `updated_at` | TIMESTAMPTZ | NO | `NOW()` | - | 마지막 수정일시 |
+
+**현재 저장 항목**:
+| key | 설명 | 기본값 |
+|-----|------|--------|
+| `cache_enabled` | Semantic Cache 활성화 여부 | `true` |
+| `cache_similarity_threshold` | 캐시 히트 cosine 유사도 임계값 | `0.92` |
+| `cache_ttl` | 캐시 TTL(초) | `1800` |
+
+**로드 흐름**: 앱 시작 → `main.py` lifespan → `sem_cache.load_config_from_db(conn)` → 런타임 전역변수 갱신
+**저장 흐름**: `PUT /api/admin/cache/config` → 런타임 전역변수 즉시 반영 + DB upsert
 
 ---
 
