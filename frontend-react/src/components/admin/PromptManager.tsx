@@ -1,15 +1,15 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Save, XCircle } from 'lucide-react';
+import { Save, XCircle, CheckCircle } from 'lucide-react';
 import { listPrompts, updatePrompt } from '../../api/prompts';
 import type { Prompt, PromptUpdate } from '../../api/prompts';
 import { Button } from '../ui/Button';
-import { Modal } from '../ui/Modal';
 
 export function PromptManager() {
   const qc = useQueryClient();
-  const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<PromptUpdate>({});
+  const [saved, setSaved] = useState(false);
 
   const { data: prompts, isLoading } = useQuery({
     queryKey: ['prompts'],
@@ -21,20 +21,18 @@ export function PromptManager() {
     mutationFn: ({ id, payload }: { id: number; payload: PromptUpdate }) => updatePrompt(id, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['prompts'] });
-      setSelectedPrompt(null);
-      setEditForm({});
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
     },
   });
 
-  const openModal = (p: Prompt) => {
-    setSelectedPrompt(p);
+  const selectedPrompt = prompts?.find((p) => p.id === selectedId) ?? null;
+
+  const handleSelect = (p: Prompt) => {
+    setSelectedId(p.id);
     setEditForm({ func_name: p.func_name, content: p.content, description: p.description });
     saveMutation.reset();
-  };
-
-  const closeModal = () => {
-    setSelectedPrompt(null);
-    setEditForm({});
+    setSaved(false);
   };
 
   const handleSave = () => {
@@ -47,72 +45,64 @@ export function PromptManager() {
   }
 
   return (
-    <div className="space-y-4">
-      <p className="text-xs text-slate-500">
-        각 LLM 호출 기능에 사용되는 시스템 프롬프트를 관리합니다. 카드를 클릭하여 수정할 수 있습니다.
-      </p>
-
-      <div className="space-y-3">
+    <div className="flex gap-6">
+      {/* ── 좌측 리스트 ── */}
+      <div className="w-80 flex-shrink-0 flex flex-col gap-1 overflow-y-auto pr-2 max-h-[600px]">
         {prompts?.map((p) => (
           <button
             key={p.id}
-            onClick={() => openModal(p)}
-            className="w-full text-left bg-slate-800 border border-slate-700 rounded-xl overflow-hidden hover:border-indigo-500/50 transition-colors group"
+            onClick={() => handleSelect(p)}
+            className={`w-full text-left rounded-lg px-3 py-2.5 transition-colors border ${
+              selectedId === p.id
+                ? 'bg-indigo-500/15 border-indigo-500/50 text-indigo-300'
+                : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500 hover:text-slate-200'
+            }`}
           >
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700/50">
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-mono text-slate-500 bg-slate-900 px-2 py-0.5 rounded">
-                  #{p.id}
-                </span>
-                <span className="text-xs font-mono text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded">
-                  {p.func_key}
-                </span>
-                <span className="text-sm font-medium text-slate-200">{p.func_name}</span>
-              </div>
-              <span className="text-[10px] text-slate-500">
-                {new Date(p.updated_at).toLocaleString('ko-KR')}
+            <div className="flex items-center gap-1.5 mb-1">
+              <span className="text-[10px] font-mono text-slate-500">#{p.id}</span>
+              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                selectedId === p.id ? 'text-indigo-300 bg-indigo-500/20' : 'text-slate-400 bg-slate-700'
+              }`}>
+                {p.func_key}
               </span>
             </div>
-
-            {/* Body */}
-            <div className="px-5 py-4 space-y-2">
-              <p className="text-xs text-slate-500">{p.description}</p>
-              <pre className="bg-slate-900/50 border border-slate-700/50 rounded-lg px-4 py-3 text-xs text-slate-300 font-mono whitespace-pre-wrap leading-relaxed max-h-32 overflow-hidden">
-                {p.content}
-              </pre>
-            </div>
+            <p className="text-xs font-medium truncate">{p.func_name}</p>
           </button>
         ))}
       </div>
 
-      {/* Edit Modal */}
-      {selectedPrompt && (
-        <Modal
-          isOpen
-          onClose={closeModal}
-          title={`프롬프트 수정 — ${selectedPrompt.func_key}`}
-          maxWidth="max-w-3xl"
-        >
-          <div className="space-y-5">
-            {saveMutation.isError && (
-              <div className="flex items-center gap-2 px-4 py-3 rounded-lg text-sm border bg-rose-500/10 border-rose-500/30 text-rose-300">
-                <XCircle className="w-4 h-4" /> 저장 실패: {String(saveMutation.error)}
-              </div>
-            )}
-
-            {/* 기본 정보 */}
-            <div className="flex items-center gap-3 bg-slate-900/60 rounded-lg px-4 py-3">
-              <span className="text-xs font-mono text-slate-500 bg-slate-800 px-2 py-0.5 rounded">
+      {/* ── 우측 편집 패널 ── */}
+      <div className="flex-1 min-w-0">
+        {!selectedPrompt ? (
+          <div className="h-full flex items-center justify-center text-slate-500 text-sm">
+            좌측에서 프롬프트를 선택하세요
+          </div>
+        ) : (
+          <div className="h-full flex flex-col gap-4">
+            {/* 헤더 */}
+            <div className="flex items-center gap-3 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3">
+              <span className="text-xs font-mono text-slate-500 bg-slate-900 px-2 py-0.5 rounded">
                 #{selectedPrompt.id}
               </span>
               <span className="text-xs font-mono text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded">
                 {selectedPrompt.func_key}
               </span>
-              <span className="text-[10px] text-slate-500 ml-auto">
+              <span className="text-xs text-slate-500 ml-auto">
                 최종 수정: {new Date(selectedPrompt.updated_at).toLocaleString('ko-KR')}
               </span>
             </div>
+
+            {/* 상태 메시지 */}
+            {saveMutation.isError && (
+              <div className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs border bg-rose-500/10 border-rose-500/30 text-rose-300">
+                <XCircle className="w-3.5 h-3.5 flex-shrink-0" /> 저장 실패: {String(saveMutation.error)}
+              </div>
+            )}
+            {saved && (
+              <div className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs border bg-emerald-500/10 border-emerald-500/30 text-emerald-300">
+                <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" /> 저장되었습니다
+              </div>
+            )}
 
             {/* 기능명 */}
             <div>
@@ -142,16 +132,13 @@ export function PromptManager() {
               <textarea
                 value={editForm.content ?? ''}
                 onChange={(e) => setEditForm((f) => ({ ...f, content: e.target.value }))}
-                rows={14}
-                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 font-mono leading-relaxed focus:outline-none focus:border-indigo-500 resize-y"
+                rows={16}
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 font-mono leading-relaxed focus:outline-none focus:border-indigo-500 resize-y overflow-y-auto"
               />
             </div>
 
-            {/* 액션 버튼 */}
-            <div className="flex justify-end gap-3 pt-2 border-t border-slate-700/50">
-              <Button variant="secondary" size="sm" onClick={closeModal}>
-                취소
-              </Button>
+            {/* 저장 버튼 */}
+            <div className="flex justify-end pt-1 border-t border-slate-700/50">
               <Button
                 variant="primary"
                 size="sm"
@@ -162,8 +149,8 @@ export function PromptManager() {
               </Button>
             </div>
           </div>
-        </Modal>
-      )}
+        )}
+      </div>
     </div>
   );
 }

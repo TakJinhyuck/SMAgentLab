@@ -18,6 +18,7 @@ from domain.llm.factory import get_llm_provider, switch_provider, get_runtime_co
 from domain.llm.ollama import OllamaProvider
 from domain.llm.inhouse import InHouseLLMProvider
 from domain.knowledge.retrieval import get_thresholds, set_thresholds, get_search_defaults, set_search_defaults
+from domain.prompt.loader import get_prompt as load_prompt
 from shared import cache as sem_cache
 
 router = APIRouter(tags=["admin"])
@@ -213,13 +214,15 @@ async def suggest_category(name: str, body: dict, user: dict = Depends(get_curre
         return {"suggested_category": None}
 
     categories_str = ", ".join(f'"{c}"' for c in categories)
-    prompt = (
-        f"다음 지식 내용을 읽고, 제시된 업무구분 중 가장 적합한 하나를 골라주세요. "
-        f"반드시 제시된 업무구분 중 하나의 이름만 답하고, 다른 설명은 절대 하지 마세요.\n\n"
-        f"업무구분 목록: {categories_str}\n\n"
-        f"지식 내용:\n{content[:600]}\n\n"
-        f"가장 적합한 업무구분 이름:"
+    _CATEGORY_SUGGEST_FALLBACK = (
+        "다음 지식 내용을 읽고, 제시된 업무구분 중 가장 적합한 하나를 골라주세요. "
+        "반드시 제시된 업무구분 중 하나의 이름만 답하고, 다른 설명은 절대 하지 마세요.\n\n"
+        "업무구분 목록: {categories}\n\n"
+        "지식 내용:\n{content}\n\n"
+        "가장 적합한 업무구분 이름:"
     )
+    template = await load_prompt("category_suggest", _CATEGORY_SUGGEST_FALLBACK)
+    prompt = template.format(categories=categories_str, content=content[:600])
     try:
         answer, _ = await get_llm_provider().generate(context="", question=prompt)
         suggested = answer.strip().strip('"').strip("'").strip()
@@ -616,14 +619,15 @@ async def suggest_glossary_terms(
     # 보안 필터 회피: 8자리+ 숫자 마스킹 + 질문당 80자 초과 자르기 (LLM 입력 크기 제한)
     sanitized = [re.sub(r"\d{8,}", "[ID]", q)[:80] for q in questions]
 
-    system_prompt = "당신은 업무 용어를 추출하는 전문가입니다. 답변은 반드시 JSON 형식으로만 출력하세요."
-    question = f"""다음 질문 목록에서 자주 등장하거나 중요한 업무 용어를 최대 10개 추출해주세요.
-
-질문 목록:
-{chr(10).join(f'- {q}' for q in sanitized)}
-
-다음 JSON 형식으로만 답변하세요 (다른 텍스트 없이):
-[{{"term": "용어명", "description": "이 용어의 업무적 의미와 설명 (2-3문장)"}}]"""
+    _GLOSSARY_SUGGEST_SYS_FALLBACK = "당신은 업무 용어를 추출하는 전문가입니다. 답변은 반드시 JSON 형식으로만 출력하세요."
+    system_prompt = await load_prompt("glossary_suggest", _GLOSSARY_SUGGEST_SYS_FALLBACK)
+    question = (
+        f"다음 질문 목록에서 자주 등장하거나 중요한 업무 용어를 최대 10개 추출해주세요.\n\n"
+        f"질문 목록:\n"
+        + "\n".join(f"- {q}" for q in sanitized)
+        + '\n\n다음 JSON 형식으로만 답변하세요 (다른 텍스트 없이):\n'
+        + '[{"term": "용어명", "description": "이 용어의 업무적 의미와 설명 (2-3문장)"}]'
+    )
 
     from core.security import get_user_api_key
     api_key = get_user_api_key(admin)

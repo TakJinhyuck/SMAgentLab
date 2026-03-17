@@ -402,7 +402,10 @@ async def _run_migrations() -> None:
             ('chat_system', 'RAG 채팅 시스템', $1, 'RAG 기반 지식 검색 채팅의 시스템 프롬프트'),
             ('tool_select', 'MCP 도구 선택', $2, 'MCP 도구를 선택하고 파라미터를 추출하는 프롬프트'),
             ('tool_answer', 'MCP 응답 답변', $3, 'MCP API 응답 데이터 기반으로 답변을 생성하는 프롬프트'),
-            ('autocomplete', '도구 등록 자동완성', $4, 'MCP 도구 등록 시 자연어→JSON 변환 프롬프트')
+            ('autocomplete', '도구 등록 자동완성', $4, 'MCP 도구 등록 시 자연어→JSON 변환 프롬프트'),
+            ('category_suggest', '카테고리 자동 추천', $5, '지식 내용을 분석해 적합한 업무구분을 추천하는 프롬프트. {categories}·{content} 플레이스홀더 유지 필수'),
+            ('glossary_suggest', '용어 추천 시스템', $6, '미매핑 질문에서 업무 용어를 추출하는 시스템 프롬프트'),
+            ('conv_summarize', '대화 요약', $7, '대화 기록을 요약하는 프롬프트. {dialogue} 플레이스홀더 유지 필수')
             ON CONFLICT (func_key) DO NOTHING
         """,
             # chat_system
@@ -441,6 +444,24 @@ async def _run_migrations() -> None:
             # autocomplete
             """당신은 JSON 변환 전문가입니다. 사용자가 자연어로 설명하는 HTTP API 정보를 구조화된 JSON으로 변환합니다.
 반드시 JSON만 출력하세요. 설명, 인사말, 마크다운 코드 블록 없이 순수 JSON만 반환합니다.""",
+            # category_suggest
+            """다음 지식 내용을 읽고, 제시된 업무구분 중 가장 적합한 하나를 골라주세요. 반드시 제시된 업무구분 중 하나의 이름만 답하고, 다른 설명은 절대 하지 마세요.
+
+업무구분 목록: {categories}
+
+지식 내용:
+{content}
+
+가장 적합한 업무구분 이름:""",
+            # glossary_suggest
+            """당신은 업무 용어를 추출하는 전문가입니다. 답변은 반드시 JSON 형식으로만 출력하세요.""",
+            # conv_summarize
+            """다음은 IT 운영 지원 챗봇과의 대화 기록입니다. 핵심 질문, 파악된 원인, 제시된 해결책, 주요 기술 사실을 3~5문장으로 간결하게 요약해 주세요.
+
+[대화 기록]
+{dialogue}
+
+요약:""",
         )
 
 

@@ -5,6 +5,7 @@ import logging
 from typing import Optional
 
 from core.database import get_conn
+from domain.prompt.loader import get_prompt as load_prompt
 from shared.embedding import embedding_service
 
 logger = logging.getLogger(__name__)
@@ -122,16 +123,20 @@ async def maybe_summarize(conversation_id: int, llm_provider) -> None:
             logger.info("대화 요약 저장: conv=%d, msg %d~%d", conversation_id, turn_start, turn_end)
 
 
+_CONV_SUMMARIZE_FALLBACK = (
+    "다음은 IT 운영 지원 챗봇과의 대화 기록입니다. "
+    "핵심 질문, 파악된 원인, 제시된 해결책, 주요 기술 사실을 "
+    "3~5문장으로 간결하게 요약해 주세요.\n\n"
+    "[대화 기록]\n{dialogue}\n\n요약:"
+)
+
+
 async def _summarize_with_llm(messages: list, llm_provider) -> Optional[str]:
     dialogue = "\n".join(
         f"{'사용자' if r['role'] == 'user' else '어시스턴트'}: {r['content']}" for r in messages
     )
-    prompt = (
-        "다음은 IT 운영 지원 챗봇과의 대화 기록입니다. "
-        "핵심 질문, 파악된 원인, 제시된 해결책, 주요 기술 사실을 "
-        "3~5문장으로 간결하게 요약해 주세요.\n\n"
-        f"[대화 기록]\n{dialogue}\n\n요약:"
-    )
+    template = await load_prompt("conv_summarize", _CONV_SUMMARIZE_FALLBACK)
+    prompt = template.format(dialogue=dialogue)
     try:
         summary, _ = await llm_provider.generate(context="", question=prompt)
         return summary.strip() or None
