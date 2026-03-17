@@ -222,7 +222,10 @@ async def suggest_category(name: str, body: dict, user: dict = Depends(get_curre
         "가장 적합한 업무구분 이름:"
     )
     template = await load_prompt("category_suggest", _CATEGORY_SUGGEST_FALLBACK)
-    prompt = template.format(categories=categories_str, content=content[:600])
+    try:
+        prompt = template.format(categories=categories_str, content=content[:600])
+    except KeyError:
+        prompt = _CATEGORY_SUGGEST_FALLBACK.format(categories=categories_str, content=content[:600])
     try:
         answer, _ = await get_llm_provider().generate(context="", question=prompt)
         suggested = answer.strip().strip('"').strip("'").strip()

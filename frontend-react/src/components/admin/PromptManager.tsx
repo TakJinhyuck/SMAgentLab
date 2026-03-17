@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Save, XCircle, CheckCircle } from 'lucide-react';
+import { Save, XCircle, CheckCircle, AlertTriangle } from 'lucide-react';
 import { listPrompts, updatePrompt } from '../../api/prompts';
 import type { Prompt, PromptUpdate } from '../../api/prompts';
 import { Button } from '../ui/Button';
@@ -91,6 +91,18 @@ export function PromptManager() {
                 최종 수정: {new Date(selectedPrompt.updated_at).toLocaleString('ko-KR')}
               </span>
             </div>
+
+            {/* 플레이스홀더 경고 */}
+            {/\{[^}]+\}/.test(selectedPrompt.content) && (
+              <div className="flex items-start gap-2 px-4 py-2 rounded-lg text-xs border bg-amber-500/10 border-amber-500/30 text-amber-300">
+                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                <span>
+                  이 프롬프트에는 <code className="bg-amber-900/40 px-1 rounded font-mono">
+                    {[...selectedPrompt.content.matchAll(/\{([^}]+)\}/g)].map(m => `{${m[1]}}`).join(', ')}
+                  </code> 플레이스홀더가 포함되어 있습니다. 수정 시 반드시 유지하세요.
+                </span>
+              </div>
+            )}
 
             {/* 상태 메시지 */}
             {saveMutation.isError && (
