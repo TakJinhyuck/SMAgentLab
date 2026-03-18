@@ -217,8 +217,8 @@ async function _runStream(
         updateLastMessage((m) => ({ ...m, toolError: msg }));
         // isStreaming 유지 — HTTP 실패 후 RAG 기반 LLM 답변이 이어짐
       } else if (event.type === 'done') {
-        const msgId = (event as { type: 'done'; message_id?: number }).message_id;
-        updateLastMessage((m) => ({ ...m, isStreaming: false, messageId: msgId }));
+        const doneEvent = event as { type: 'done'; message_id?: number; status?: string };
+        updateLastMessage((m) => ({ ...m, isStreaming: false, messageId: doneEvent.message_id, status: doneEvent.status }));
       }
     }
   } catch (err) {

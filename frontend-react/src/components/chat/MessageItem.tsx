@@ -101,8 +101,8 @@ export function MessageItem({ message, namespace }: MessageItemProps) {
             </div>
           )}
 
-          {/* Feedback - hide while streaming or if already feedbacked */}
-          {!message.isStreaming && message.content && namespace && !message.has_feedback && (
+          {/* Feedback - hide while streaming, already feedbacked, or failed messages */}
+          {!message.isStreaming && message.content && namespace && !message.has_feedback && message.status !== 'failed' && (
             <FeedbackSection
               namespace={namespace}
               question={message.question ?? ''}

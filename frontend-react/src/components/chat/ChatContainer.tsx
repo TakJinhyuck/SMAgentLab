@@ -99,6 +99,7 @@ function convertMessages(msgs: { id: number; role: string; content: string; mapp
         has_feedback: m.has_feedback ?? false,
         messageId: m.id,
         isStreaming: isGenerating,
+        status: m.status,
       });
     }
   }
