@@ -69,6 +69,7 @@ class KnowledgeRagAgent(AgentBase):
         token_count = 0
         mapped_term: Optional[str] = None
         has_results = False
+        llm_failed = False
 
         try:
             yield {"type": "status", "step": "embedding", "message": "질문 임베딩 생성 중..."}
@@ -106,7 +107,7 @@ class KnowledgeRagAgent(AgentBase):
                 }
                 yield {"type": "token", "data": cached["answer"]}
                 await create_query_log(namespace, query, cached["answer"], bool(cached.get("results")), cached.get("mapped_term"), msg_id)
-                yield {"type": "done", "message_id": msg_id}
+                yield {"type": "done", "message_id": msg_id, "status": "completed"}
                 return
 
             yield {"type": "status", "step": "context", "message": "용어 매핑 및 대화 맥락 검색 중..."}
@@ -163,11 +164,13 @@ class KnowledgeRagAgent(AgentBase):
                     yield {"type": "token", "data": token}
             except Exception as e:
                 logger.warning("LLM 스트리밍 실패: %s", e)
+                llm_failed = True
                 full_answer = LLM_UNAVAILABLE_MSG
                 yield {"type": "token", "data": LLM_UNAVAILABLE_MSG}
 
             final_answer = full_answer or LLM_UNAVAILABLE_MSG
-            await update_assistant_message(msg_id, final_answer, "completed")
+            msg_status = "failed" if llm_failed else "completed"
+            await update_assistant_message(msg_id, final_answer, msg_status)
             if new_inhouse_conv_id and new_inhouse_conv_id != inhouse_conv_id:
                 await update_inhouse_conv_id(conversation_id, new_inhouse_conv_id)
             await create_query_log(namespace, query, final_answer, has_results, mapped_term, msg_id)
@@ -181,7 +184,7 @@ class KnowledgeRagAgent(AgentBase):
                     "query": query,
                 })
 
-            yield {"type": "done", "message_id": msg_id}
+            yield {"type": "done", "message_id": msg_id, "status": msg_status}
 
         except Exception as e:
             logger.error("KnowledgeRagAgent 에러: %s", e, exc_info=True)

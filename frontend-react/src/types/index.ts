@@ -145,6 +145,7 @@ export interface ChatMessage {
   has_feedback?: boolean;
   messageId?: number;
   toolError?: string | null;
+  status?: string;
 }
 
 // SSE Event types
@@ -169,6 +170,7 @@ export interface SSETokenEvent {
 export interface SSEDoneEvent {
   type: 'done';
   message_id?: number;
+  status?: string;
 }
 
 export type SSEEvent = SSEStatusEvent | SSEMetaEvent | SSETokenEvent | SSEDoneEvent | SSEToolRequestEvent | SSEToolResultEvent | SSEToolErrorEvent;
