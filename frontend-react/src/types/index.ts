@@ -355,6 +355,7 @@ export interface McpTool {
   timeout_sec: number;
   max_response_kb: number;
   is_active: boolean;
+  agent_type: string;
   created_at: string;
 }
 
@@ -370,6 +371,7 @@ export interface McpToolCreatePayload {
   response_example?: Record<string, unknown> | null;
   timeout_sec?: number;
   max_response_kb?: number;
+  agent_type: string;
 }
 
 export interface McpToolUpdatePayload {

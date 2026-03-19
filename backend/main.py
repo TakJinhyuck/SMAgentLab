@@ -227,6 +227,7 @@ async def _migrate_core_tables(conn) -> None:
     await conn.execute("ALTER TABLE ops_query_log ADD COLUMN IF NOT EXISTS agent_type VARCHAR(50) NOT NULL DEFAULT 'knowledge_rag'")
     await conn.execute("ALTER TABLE ops_feedback ADD COLUMN IF NOT EXISTS agent_type VARCHAR(50) NOT NULL DEFAULT 'knowledge_rag'")
     await conn.execute("ALTER TABLE ops_feedback ADD COLUMN IF NOT EXISTS meta JSONB")
+    await conn.execute("ALTER TABLE ops_mcp_tool ADD COLUMN IF NOT EXISTS agent_type VARCHAR(50) NOT NULL DEFAULT 'knowledge_rag'")
 
     # ── query_log answer 역매칭 ────────────────────────────────────
     await conn.execute("""
