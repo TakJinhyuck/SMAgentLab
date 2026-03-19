@@ -1,10 +1,5 @@
 # Text-to-SQL 이식 작업 내역
 
-> `D:\personalPJT\text2sql-main` 벤치마크를 `SMAgentLab`(dev_0)으로 퓨전 이식할 때
-> 변경·추가·제거된 항목 정리
-
----
-
 ## 1. 아키텍처 구조 변경
 
 | 항목 | 벤치마크 (text2sql-main) | SMAgentLab (dev_0) |
