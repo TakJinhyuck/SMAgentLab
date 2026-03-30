@@ -11,6 +11,7 @@ import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { CodeBlock } from '../ui/CodeBlock';
 import { Badge } from '../ui/Badge';
+import { PaginationInfo, PaginationNav, useClientPaging } from '../ui/Pagination';
 import type { McpTool, McpToolParam, McpToolCreatePayload } from '../../types';
 
 const PLACEHOLDER_TEXT = `API 설명을 자유롭게 입력하세요. LLM이 자동으로 구조화합니다.
@@ -49,6 +50,7 @@ type McpSubTab = 'tools' | 'logs';
 
 export function McpToolManager() {
   const storeNamespace = useAppStore((s) => s.namespace);
+  const selectedAgent = useAppStore((s) => s.selectedAgent ?? 'knowledge_rag');
   const user = useAuthStore((s) => s.user);
   const [namespace, setNamespace] = useState(storeNamespace || '');
   const [subTab, setSubTab] = useState<McpSubTab>('tools');
@@ -86,6 +88,8 @@ export function McpToolManager() {
   const [autoCompleting, setAutoCompleting] = useState(false);
   const [error, setError] = useState('');
   const [selectedTool, setSelectedTool] = useState<McpTool | null>(null);
+  const [toolPage, setToolPage] = useState(1);
+  const [toolPageSize, setToolPageSize] = useState(30);
   const [testParams, setTestParams] = useState<Record<string, string>>({});
   const [testResult, setTestResult] = useState<McpToolTestResult | null>(null);
   const [testLoading, setTestLoading] = useState(false);
@@ -94,7 +98,7 @@ export function McpToolManager() {
     if (!namespace) return;
     setLoading(true);
     try {
-      setTools(await listMcpTools(namespace));
+      setTools(await listMcpTools(namespace, selectedAgent));
     } finally {
       setLoading(false);
     }
@@ -158,6 +162,7 @@ export function McpToolManager() {
           method: form.method, hub_base_url: form.hub_base_url, tool_path: form.tool_path, headers: parsedHeaders,
           param_schema: form.param_schema, response_example: parsedResponse ?? null,
           timeout_sec: form.timeout_sec, max_response_kb: form.max_response_kb,
+          agent_type: selectedAgent,
         };
         await createMcpTool(payload);
       }
@@ -482,13 +487,18 @@ export function McpToolManager() {
           )}
 
           {/* 도구 목록 */}
-          {loading ? (
-            <p className="text-slate-400 text-center py-8">불러오는 중...</p>
-          ) : tools.length === 0 ? (
-            <p className="text-slate-500 text-center py-8">등록된 MCP 도구가 없습니다.</p>
-          ) : (
-            <div className="space-y-3">
-              {tools.map((tool) => (
+          {(() => {
+            const toolPaging = useClientPaging(tools, toolPageSize);
+            const pagedTools = toolPaging.slice(toolPage);
+            return loading ? (
+              <p className="text-slate-400 text-center py-8">불러오는 중...</p>
+            ) : tools.length === 0 ? (
+              <p className="text-slate-500 text-center py-8">등록된 MCP 도구가 없습니다.</p>
+            ) : (
+              <>
+              <PaginationInfo totalItems={toolPaging.totalItems} pageSize={toolPageSize} onPageSizeChange={setToolPageSize} />
+              <div className="space-y-3">
+              {pagedTools.map((tool) => (
                 <button
                   key={tool.id}
                   type="button"
@@ -537,7 +547,10 @@ export function McpToolManager() {
                 </button>
               ))}
             </div>
-          )}
+              <PaginationNav page={toolPage} totalPages={toolPaging.totalPages} onPageChange={setToolPage} />
+              </>
+            );
+          })()}
 
           {/* 도구 상세 모달 — 테스트 호출 + 수정/삭제 */}
           {selectedTool && (() => {
@@ -891,20 +904,6 @@ function DonutChart({ dist, total }: { dist: Record<string, number>; total: numb
   );
 }
 
-// ── 페이지네이터 ──────────────────────────────────────────────────────────────
-function Paginator({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (p: number) => void }) {
-  if (totalPages <= 1) return null;
-  return (
-    <div className="flex items-center gap-2 text-sm text-slate-400">
-      <button onClick={() => onChange(page - 1)} disabled={page <= 1}
-        className="px-2 py-1 rounded hover:bg-slate-700 disabled:opacity-40 transition-colors">‹</button>
-      <span className="text-xs">{page} / {totalPages}</span>
-      <button onClick={() => onChange(page + 1)} disabled={page >= totalPages}
-        className="px-2 py-1 rounded hover:bg-slate-700 disabled:opacity-40 transition-colors">›</button>
-    </div>
-  );
-}
-
 // ── MCP 호출 로그 메인 ────────────────────────────────────────────────────────
 function McpToolLogs({ namespace }: { namespace: string }) {
   type Preset = '1h' | '24h' | '7d' | '30d' | 'custom';
@@ -1017,6 +1016,9 @@ function McpToolLogs({ namespace }: { namespace: string }) {
         </div>
       ) : (
         <>
+          <div className="flex justify-end">
+            <PaginationNav page={statsPage} totalPages={statsTotalPages} onPageChange={setStatsPage} />
+          </div>
           <div className="border border-slate-700 rounded-lg overflow-hidden">
             <table className="w-full text-sm">
               <thead>
@@ -1052,9 +1054,6 @@ function McpToolLogs({ namespace }: { namespace: string }) {
                 })}
               </tbody>
             </table>
-          </div>
-          <div className="flex justify-end">
-            <Paginator page={statsPage} totalPages={statsTotalPages} onChange={setStatsPage} />
           </div>
         </>
       )}
@@ -1134,7 +1133,7 @@ function McpToolLogs({ namespace }: { namespace: string }) {
             </div>
             <div className="flex items-center justify-between">
               <p className="text-xs text-slate-500">전체 {logResp.total}건</p>
-              <Paginator page={logPage} totalPages={logTotalPages} onChange={handleLogPage} />
+              <PaginationNav page={logPage} totalPages={logTotalPages} onPageChange={handleLogPage} />
             </div>
           </div>
         )}

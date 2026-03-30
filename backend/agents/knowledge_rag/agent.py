@@ -6,16 +6,16 @@ from typing import AsyncIterator, Optional
 from agents.base import AgentBase
 from core.database import get_conn
 from core.config import settings
-from domain.chat import memory
-from domain.chat.helpers import (
+from service.chat import memory
+from service.chat.helpers import (
     LLM_UNAVAILABLE_MSG,
     results_to_json, results_to_payload,
     update_assistant_message, update_inhouse_conv_id,
     create_query_log, post_save_tasks,
 )
-from domain.knowledge import retrieval
-from domain.llm.base import resolve_system_prompt
-from domain.llm.factory import get_llm_provider
+from agents.knowledge_rag.knowledge import retrieval
+from service.llm.base import resolve_system_prompt
+from service.llm.factory import get_llm_provider
 from shared.embedding import embedding_service
 from shared import cache as sem_cache
 
@@ -92,9 +92,11 @@ class KnowledgeRagAgent(AgentBase):
                 search_question = f"{prev_context} {query}"
                 logger.info("멀티턴 검색 보강: '%s' → '%s'", query, search_question)
 
-            query_vec = await embedding_service.embed(search_question)
-            # 캐시 전용: 한글 공백 정규화 후 embed (RAG 검색은 원본 query_vec 유지)
-            cache_vec = await embedding_service.embed(sem_cache.normalize_query(search_question))
+            # 두 임베딩을 병렬로 생성 (RAG 검색용 + 캐시 정규화용)
+            query_vec, cache_vec = await asyncio.gather(
+                embedding_service.embed(search_question),
+                embedding_service.embed(sem_cache.normalize_query(search_question)),
+            )
 
             # ── Semantic Cache 조회 ──
             cached = await sem_cache.get_cached(namespace, cache_vec)

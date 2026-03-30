@@ -5,6 +5,7 @@ import { clsx } from 'clsx';
 import { getCacheStats, getCacheEntries, invalidateCache, deleteCacheEntry, getCacheConfig, setCacheConfig } from '../../api/cache';
 import { getNamespaces } from '../../api/namespaces';
 import { Button } from '../ui/Button';
+import { PaginationInfo, PaginationNav, useClientPaging } from '../ui/Pagination';
 
 function formatTtl(seconds: number): string {
   if (seconds <= 0) return '만료됨';
@@ -17,6 +18,8 @@ export function CachePanel() {
   const queryClient = useQueryClient();
   const [namespace, setNamespace] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(30);
 
   const { data: namespaces = [] } = useQuery<string[]>({
     queryKey: ['namespaces'],
@@ -73,6 +76,11 @@ export function CachePanel() {
       queryClient.invalidateQueries({ queryKey: ['cache-config'] });
     },
   });
+
+  const { totalPages, totalItems, slice } = useClientPaging(entries, pageSize);
+  const pagedEntries = slice(page);
+
+  useEffect(() => { setPage(1); }, [selectedNs, pageSize]);
 
   const handleRefresh = () => {
     refetchStats();
@@ -201,6 +209,7 @@ export function CachePanel() {
           캐시된 질문 목록
           <span className="ml-2 text-xs font-normal text-slate-500">(히트 수 많은 순)</span>
         </h3>
+        <PaginationInfo totalItems={totalItems} pageSize={pageSize} onPageSizeChange={setPageSize} />
         {entriesLoading ? (
           <div className="text-sm text-slate-500 animate-pulse py-6 text-center">로딩 중...</div>
         ) : entries.length === 0 ? (
@@ -219,7 +228,7 @@ export function CachePanel() {
                 </tr>
               </thead>
               <tbody>
-                {entries.map((entry) => (
+                {pagedEntries.map((entry) => (
                   <tr key={entry.key} className="border-b border-slate-700/50 last:border-0 hover:bg-slate-800/30">
                     <td className="px-4 py-3">
                       <p className="text-slate-200 truncate max-w-md">{entry.query || '(질문 없음)'}</p>
@@ -254,6 +263,7 @@ export function CachePanel() {
             </table>
           </div>
         )}
+        <PaginationNav page={page} totalPages={totalPages} onPageChange={setPage} />
       </div>
     </div>
   );
