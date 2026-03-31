@@ -965,3 +965,5 @@ async def health():
         "llm_provider": settings.llm_provider,
         "llm": "connected" if llm_ok else "unavailable",
     }
+
+# API v2 업데이트 - 응답 속도 개선
