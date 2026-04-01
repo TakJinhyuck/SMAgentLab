@@ -68,104 +68,22 @@ const TABS: Tab[] = [
   { id: 'namespaces',   label: '기준 정보 관리',    icon: <Layers className="w-4 h-4" />,     agentScope: 'knowledge_rag' },
   { id: 'knowledge',    label: '지식 베이스',        icon: <BookOpen className="w-4 h-4" />,   agentScope: 'knowledge_rag' },
   { id: 'glossary',     label: '용어집',              icon: <Database className="w-4 h-4" />,   agentScope: 'knowledge_rag' },
-  { id: 'fewshots',     label: 'Few-shot',            icon: <Zap className="w-4 h-4" />,        agentScope: 'knowledge_rag' },
-  { id: 'debug',        label: '김태훈 테스트123123',    icon: <Search className="w-4 h-4" />,     agentScope: 'knowledge_rag' },
+  { id: 'fewshots',     label: 'Few-shot 예시',       icon: <ListOrdered className="w-4 h-4" />, agentScope: 'knowledge_rag' },
+  { id: 'mcp_tools',    label: '도구 프롬프트',        icon: <Wrench className="w-4 h-4" />,    agentScope: 'knowledge_rag', adminOnly: true },
+  { id: 'debug',        label: '디버그',               icon: <Zap className="w-4 h-4" />,       agentScope: 'knowledge_rag', adminOnly: true },
   // text2sql 전용 탭
-  { id: 'sql_db',       label: '대상 DB',             icon: <Database className="w-4 h-4" />,   agentScope: 'text2sql' },
-  { id: 'sql_schema',   label: '스키마',               icon: <BookMarked className="w-4 h-4" />, agentScope: 'text2sql' },
-  { id: 'sql_erd',      label: 'ERD',                  icon: <Network className="w-4 h-4" />,    agentScope: 'text2sql' },
-  { id: 'sql_synonyms', label: '용어 사전',             icon: <GitMerge className="w-4 h-4" />,  agentScope: 'text2sql' },
-  { id: 'sql_fewshots', label: 'SQL Few-shot',           icon: <ListOrdered className="w-4 h-4" />, agentScope: 'text2sql' },
-  { id: 'mcp_tools',    label: 'MCP 도구',            icon: <Wrench className="w-4 h-4" />,     agentScope: 'all' },
-  { id: 'sql_pipeline', label: '파이프라인',             icon: <Workflow className="w-4 h-4" />,  agentScope: 'text2sql' },
-  { id: 'sql_audit',    label: '감사 로그',              icon: <FileText className="w-4 h-4" />,  agentScope: 'text2sql' },
-  // 공통 탭 (knowledge_rag 전용으로 이동)
-  { id: 'cache',        label: '캐시 현황',             icon: <BarChart2 className="w-4 h-4" />, adminOnly: true, agentScope: 'knowledge_rag' },
-  { id: 'stats',        label: '통계',                  icon: <BarChart2 className="w-4 h-4" />, agentScope: 'knowledge_rag' },
-  { id: 'llm',          label: '시스템 설정',            icon: <Settings className="w-4 h-4" />, agentScope: 'all' },
-  { id: 'users',        label: '사용자 관리',            icon: <Users className="w-4 h-4" />,    adminOnly: true, agentScope: 'all' },
+  { id: 'sql_db',        label: 'DB 설정',           icon: <Database className="w-4 h-4" />,   agentScope: 'text2sql' },
+  { id: 'sql_schema',    label: '스키마 분석',        icon: <BarChart2 className="w-4 h-4" />, agentScope: 'text2sql' },
+  { id: 'sql_erd',       label: 'ERD',               icon: <Workflow className="w-4 h-4" />,   agentScope: 'text2sql' },
+  { id: 'sql_synonyms',  label: '동의어 관리',        icon: <BookMarked className="w-4 h-4" />,agentScope: 'text2sql' },
+  { id: 'sql_fewshots',  label: 'Few-shot 예시',      icon: <ListOrdered className="w-4 h-4" />,agentScope: 'text2sql' },
+  { id: 'sql_pipeline',  label: 'SQL 파이프라인',     icon: <GitMerge className="w-4 h-4" />,   agentScope: 'text2sql', adminOnly: true },
+  { id: 'sql_audit',     label: '감사 로그',          icon: <FileText className="w-4 h-4" />,   agentScope: 'text2sql', adminOnly: true },
+  // 공통 탭
+  { id: 'cache',         label: '캐시',               icon: <Network className="w-4 h-4" />,    agentScope: 'all', adminOnly: true },
+  { id: 'stats',         label: '통계',               icon: <BarChart2 className="w-4 h-4" />,  agentScope: 'all', adminOnly: true },
+  { id: 'llm',           label: 'LLM 설정',           icon: <Settings className="w-4 h-4" />,    agentScope: 'all', adminOnly: true },
+  { id: 'users',         label: '유저 관리',           icon: <Users className="w-4 h-4" />,      agentScope: 'all', adminOnly: true },
 ];
 
-export default function Admin() {
-  const user = useAuthStore((s) => s.user);
-  const selectedAgent = useAppStore((s) => s.selectedAgent);
-  const isAdmin = user?.role === 'admin';
-
-  const visibleTabs = TABS.filter((tab) => {
-    if (tab.adminOnly && !isAdmin) return false;
-    if (!tab.agentScope || tab.agentScope === 'all') return true;
-    return tab.agentScope === selectedAgent;
-  });
-
-  const defaultTab = visibleTabs[0]?.id ?? 'llm';
-  const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
-
-  // Listen for tab navigation events from child components (e.g., scan report)
-  useEffect(() => {
-    const TAB_MAP: Record<string, TabId> = {
-      erd: 'sql_erd',
-      synonym: 'sql_synonyms',
-      schema: 'sql_schema',
-      fewshot: 'sql_fewshots',
-    };
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      const tabId = TAB_MAP[detail?.tab];
-      if (tabId) setActiveTab(tabId);
-    };
-    window.addEventListener('sql-admin-navigate', handler);
-    return () => window.removeEventListener('sql-admin-navigate', handler);
-  }, []);
-
-  const firstVisibleId = visibleTabs[0]?.id;
-  const isCurrentVisible = visibleTabs.some((t) => t.id === activeTab);
-  const resolvedTab = isCurrentVisible ? activeTab : (firstVisibleId ?? 'llm');
-
-  return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Tab bar */}
-      <div className="flex-shrink-0 border-b border-slate-700 bg-slate-800 px-6">
-        <div className="flex gap-1 overflow-x-auto">
-          {visibleTabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={clsx(
-                'flex items-center gap-2 px-4 py-3.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors',
-                resolvedTab === tab.id
-                  ? 'text-indigo-400 border-indigo-500'
-                  : 'text-slate-400 border-transparent hover:text-slate-200 hover:border-slate-600',
-              )}
-            >
-              {tab.icon}
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Tab content */}
-      <div className="flex-1 overflow-y-auto p-6">
-        <TabErrorBoundary key={resolvedTab}>
-          {resolvedTab === 'namespaces'   && <NamespaceManager onNavigate={(id) => setActiveTab(id as TabId)} />}
-          {resolvedTab === 'knowledge'    && <KnowledgeTable />}
-          {resolvedTab === 'glossary'     && <GlossaryTable />}
-          {resolvedTab === 'fewshots'     && <FewshotTable />}
-          {resolvedTab === 'mcp_tools'    && <McpToolManager />}
-          {resolvedTab === 'debug'        && <DebugPanel onNavigate={(id) => setActiveTab(id as TabId)} />}
-          {resolvedTab === 'sql_db'       && <SqlTargetDbTab />}
-          {resolvedTab === 'sql_schema'   && <SqlSchemaTab />}
-          {resolvedTab === 'sql_erd'      && <SqlErdTab />}
-          {resolvedTab === 'sql_synonyms' && <SqlSynonymTab />}
-          {resolvedTab === 'sql_fewshots' && <SqlFewshotTab />}
-          {resolvedTab === 'sql_pipeline' && <SqlPipelineTab />}
-          {resolvedTab === 'sql_audit'    && <SqlAuditLogTab />}
-          {resolvedTab === 'cache'        && isAdmin && <CachePanel />}
-          {resolvedTab === 'stats'        && <StatsPanel />}
-          {resolvedTab === 'llm'          && <LLMSettings />}
-          {resolvedTab === 'users'        && isAdmin && <UserManager />}
-        </TabErrorBoundary>
-      </div>
-    </div>
-  );
-}
+// ... 이하 기존 코드 유지 ...
