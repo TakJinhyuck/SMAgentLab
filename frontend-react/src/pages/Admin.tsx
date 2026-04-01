@@ -69,7 +69,7 @@ const TABS: Tab[] = [
   { id: 'knowledge',    label: '지식 베이스',        icon: <BookOpen className="w-4 h-4" />,   agentScope: 'knowledge_rag' },
   { id: 'glossary',     label: '용어집',              icon: <Database className="w-4 h-4" />,   agentScope: 'knowledge_rag' },
   { id: 'fewshots',     label: 'Few-shot',            icon: <Zap className="w-4 h-4" />,        agentScope: 'knowledge_rag' },
-  { id: 'debug',        label: '김태훈 테스트',    icon: <Search className="w-4 h-4" />,     agentScope: 'knowledge_rag' },
+  { id: 'debug',        label: '김태훈 테스트!',    icon: <Search className="w-4 h-4" />,     agentScope: 'knowledge_rag' },
   // text2sql 전용 탭
   { id: 'sql_db',       label: '대상 DB',             icon: <Database className="w-4 h-4" />,   agentScope: 'text2sql' },
   { id: 'sql_schema',   label: '스키마',               icon: <BookMarked className="w-4 h-4" />, agentScope: 'text2sql' },
