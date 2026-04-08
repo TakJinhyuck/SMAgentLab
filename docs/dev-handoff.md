@@ -17,15 +17,41 @@ docker compose up --build -d
 
 ## 현재 작업 상태
 
-> **마지막 업데이트**: 2026-03-23
-> **브랜치**: `dev_0` (테스트 완료 후 `main` 머지 예정)
-> **최근 변경**: v2.11 Oracle 지원 + Dialect 패턴 + 스키마 분리
+> **마지막 업데이트**: 2026-04-07
+> **브랜치**: `main`
+> **최근 변경**: v2.12 Text2SQL 파이프라인 안정성 + 스키마 개별 관리 + UX 벌크 작업
 
 ### 진행 중 / 다음 작업
 
 없음 — 클린 상태
 
-### 최근 완료: v2.11 Oracle 지원 + Dialect 패턴 + 스키마 분리
+### 최근 완료: v2.12 Text2SQL 파이프라인 안정성 + 스키마 개별 관리 + UX 개선
+
+**파이프라인 안정성 (fix.py / safety.py / agent.py)**
+- SQL Fixer: 원본 SQL 보존 (`original_sql`), 빈 SQL 재시도 방어, 코드블록 SQL 추출 검증 (주석만/산문/비-SELECT 거부), MAX_RETRIES 후 원본 반환
+- Safety: `sqlparse.format(strip_comments=True)` 후 빈 SQL 차단
+- Agent: execute 실패 시 최종 시도 SQL을 UI에 `sql` 이벤트로 전송 (에러-SQL 불일치 해소)
+
+**스키마 개별 관리 (target.py / service.py / router.py)**
+- `get_table_summary()`: 4개 Dialect 별 최적화 쿼리로 테이블명+컬럼수만 빠르게 조회
+- `get_tables(only=)`: 선택한 테이블만 상세 inspect (case-insensitive)
+- `POST tables/add`: 증분 추가 — skip 중복, 자동 ERD 배치, 임베딩
+- `DELETE tables/{name}`: cascade 삭제 (컬럼, 벡터, 관계)
+- `GET tables-available`: 대상 DB 테이블 요약 조회
+
+**벌크 삭제 + UX 개선 (router.py / Text2SqlAdmin.tsx)**
+- `POST synonyms/bulk-delete`, `POST fewshots/bulk-delete`: 일괄 삭제 API
+- 프론트: 체크박스 벌크 선택 + "선택 삭제 (N)" 버튼, 전체 선택/해제
+- 감사로그: `date_from`/`date_to` 날짜 범위 필터 + CSV 내보내기 (BOM UTF-8)
+- 캐시: 검색 바 추가 (질문/SQL 필터링)
+- 스키마 탭: 테이블 Import 모달, 개별 삭제(확인 모달), 빈 상태 UI
+- 스키마 검색: null description 크래시 방지 + 와일드카드 부분 매칭
+- SQL 예제 추가: SQL 필수 입력 검증
+
+**테스트 (backend/tests/)**
+- 63개 단위 테스트 작성 (fix, safety, target, service, router, agent 로직)
+
+### 이전 완료: v2.11 Oracle 지원 + Dialect 패턴 + 스키마 분리
 
 - `target.py` Dialect 패턴 리팩터링 — `PgDialect`, `MysqlDialect`, `SqliteDialect`, `OracleDialect` 분리
 - Oracle 드라이버(`oracledb`) 추가 — `connect()` / `get_tables()` / `execute_query()` 구현

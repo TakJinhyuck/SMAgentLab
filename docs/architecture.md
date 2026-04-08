@@ -1,4 +1,4 @@
-# Ops-Navigator 시스템 아키텍처 (v2.11)
+# Ops-Navigator 시스템 아키텍처 (v2.12)
 
 ## 개요
 
@@ -6,6 +6,7 @@ Ops-Navigator는 IT 운영팀의 반복적인 조회·확인 업무를 자동화
 사용자는 에이전트를 선택해 목적에 맞는 AI를 사용한다: 지식 기반 Q&A(KnowledgeRAG) 또는 자연어 → SQL 쿼리 실행(Text-to-SQL).
 
 **주요 이력 요약** (자세한 내용은 `dev-handoff.md` 참조)
+- v2.12: Text2SQL 파이프라인 안정성 개선 (SQL Fixer 원본 보존, 주석 차단, execute 실패 시 SQL 이벤트) + 스키마 개별 관리 (get_table_summary, 증분 추가/삭제) + 벌크 삭제 (용어사전/SQL예제) + 감사로그 날짜 필터·CSV + 캐시 검색 + 스키마 검색 null/와일드카드 버그 수정
 - v2.11: Oracle 지원 + Dialect 패턴 리팩터링 (PgDialect/MysqlDialect/SqliteDialect/OracleDialect) + sql_target_db.schema_name 컬럼 추가 + Pagination 상하 분리
 - v2.10: 스키마 스캔 diff 방식 개선 + ERD/용어 고아 자동 정리 + 스캔 리포트 모달 + ERD 검색·양방향 싱크
 - v2.9: `ops_prompt` 에이전트별 분리 — `agent_type` 컬럼 추가, text2sql 파이프라인 프롬프트 `ops_prompt`로 통합, 파이프라인 탭 프롬프트 편집 UI 제거
@@ -89,8 +90,8 @@ backend/
 │   │   └── agent.py     #   McpToolAgent — 3-case 플로우 + RAG + 감사 로그
 │   ├── text2sql/
 │   │   ├── agent.py     #   Text2SqlAgent (startup 병렬화, _cache_hit)
-│   │   ├── admin/       #   Text2SQL 어드민 API (대상DB·스키마·ERD·용어사전·Few-shot·파이프라인·감사로그)
-│   │   └── pipeline/    #   7단계: parse→rag→generate→validate→fix→execute→summarize
+│   │   ├── admin/       #   Text2SQL 어드민 API (대상DB·스키마(증분추가/삭제)·ERD·용어사전(벌크삭제)·Few-shot(벌크삭제)·파이프라인·감사로그(날짜필터)·캐시(검색))
+│   │   └── pipeline/    #   7단계: parse→rag→generate→validate→fix(원본보존)→execute(실패시SQL이벤트)→summarize
 │   └── http_tool/       #   HttpToolAgent (레거시)
 ├── service/             # 플랫폼 공통 레이어 (was domain/, platform/ 명칭 stdlib 충돌로 service/ 확정)
 │   ├── auth/            #   인증/계정 (JWT, bcrypt, Fernet API Key 암호화)
