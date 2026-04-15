@@ -33,11 +33,48 @@ class KnowledgeOut(BaseModel):
     query_template: Optional[str]
     base_weight: float
     category: Optional[str] = None
+    source_file: Optional[str] = None
+    source_chunk_idx: Optional[int] = None
+    source_type: Optional[str] = None
     created_by_part: Optional[str] = None
     created_by_user_id: Optional[int] = None
     created_by_username: Optional[str] = None
     created_at: str
     updated_at: str
+
+
+# ─── Bulk / Ingestion ──────────────────────────────────────────────────────
+
+class BulkKnowledgeItem(BaseModel):
+    content: str
+    container_name: Optional[str] = None
+    target_tables: Optional[list[str]] = None
+    query_template: Optional[str] = None
+    base_weight: float = Field(default=1.0, ge=0.0)
+    category: Optional[str] = None
+
+
+class BulkCreateRequest(BaseModel):
+    namespace: str
+    items: list[BulkKnowledgeItem]
+    source_file: Optional[str] = None
+    source_type: str = "manual"
+
+
+class IngestionJobOut(BaseModel):
+    id: int
+    namespace_id: int
+    source_file: Optional[str]
+    source_type: Optional[str]
+    status: str
+    total_chunks: int
+    created_chunks: int
+    auto_glossary: int
+    auto_fewshot: int
+    chunk_strategy: Optional[str]
+    error_message: Optional[str]
+    created_at: str
+    completed_at: Optional[str]
 
 
 # ─── Glossary ────────────────────────────────────────────────────────────────

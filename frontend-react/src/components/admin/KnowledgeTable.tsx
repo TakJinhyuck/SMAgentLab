@@ -1,11 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Trash2, X, Download, FileText, Upload, ChevronDown } from 'lucide-react';
 import {
   getKnowledge,
   createKnowledge,
   updateKnowledge,
   deleteKnowledge,
+  importCsv,
+  importTextSplit,
+  previewTextSplit,
+  getIngestionJobs,
+  type IngestionJob,
 } from '../../api/knowledge';
 import { getCategories } from '../../api/namespaces';
 import { useNamespaceAccess } from '../../utils/useNamespaceAccess';
@@ -60,6 +65,13 @@ export function KnowledgeTable() {
   const [categoryFilter, setCategoryFilter] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(30);
+  const [sourceFilter, setSourceFilter] = useState('');
+
+  // ── Ingestion 관련 state ──
+  const [showCsvImport, setShowCsvImport] = useState(false);
+  const [showTextSplit, setShowTextSplit] = useState(false);
+  const [showImportMenu, setShowImportMenu] = useState(false);
+  const importMenuRef = useRef<HTMLDivElement>(null);
 
   const { data: categories = [] } = useQuery({
     queryKey: ['categories', selectedNs],
@@ -69,6 +81,13 @@ export function KnowledgeTable() {
   });
 
   const categoryNames = categories.map((c) => c.name);
+
+  const { data: jobs = [] } = useQuery({
+    queryKey: ['ingestion-jobs', selectedNs],
+    queryFn: () => getIngestionJobs(selectedNs),
+    enabled: !!selectedNs,
+    staleTime: 10_000,
+  });
 
   const { data: items = [], isLoading, error } = useQuery({
     queryKey: ['knowledge', selectedNs],
@@ -139,7 +158,14 @@ export function KnowledgeTable() {
     setShowEdit(true);
   };
 
-  const filteredItems = items.filter((item) => !categoryFilter || item.category === categoryFilter);
+  const filteredItems = items.filter((item) => {
+    if (categoryFilter && item.category !== categoryFilter) return false;
+    if (sourceFilter) {
+      const st = (item as any).source_type || 'manual';
+      if (sourceFilter !== st) return false;
+    }
+    return true;
+  });
   const { totalPages, totalItems, slice } = useClientPaging(filteredItems, pageSize);
   const pagedItems = slice(page);
 
@@ -152,10 +178,31 @@ export function KnowledgeTable() {
           지식 베이스
           {selectedNs && <span className="text-sm font-normal text-slate-500 ml-2">({selectedNs})</span>}
         </h2>
-        <Button variant="primary" size="sm" onClick={() => setShowCreate(true)} disabled={!selectedNs || !canModifyNs}>
-          <Plus className="w-4 h-4" />
-          지식 추가
-        </Button>
+        <div className="flex gap-2">
+          <div className="relative" ref={importMenuRef}>
+            <Button variant="secondary" size="sm" onClick={() => setShowImportMenu(!showImportMenu)} disabled={!selectedNs || !canModifyNs}>
+              <Download className="w-4 h-4" />
+              지식 가져오기
+              <ChevronDown className="w-3 h-3 ml-1" />
+            </Button>
+            {showImportMenu && (
+              <div className="absolute right-0 top-full mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 z-50 w-52">
+                <button onClick={() => { setShowCsvImport(true); setShowImportMenu(false); }}
+                  className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 flex items-center gap-2">
+                  <Upload className="w-3.5 h-3.5" /> CSV/Excel 임포트
+                </button>
+                <button onClick={() => { setShowTextSplit(true); setShowImportMenu(false); }}
+                  className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 flex items-center gap-2">
+                  <FileText className="w-3.5 h-3.5" /> 대량 텍스트 등록
+                </button>
+              </div>
+            )}
+          </div>
+          <Button variant="primary" size="sm" onClick={() => setShowCreate(true)} disabled={!selectedNs || !canModifyNs}>
+            <Plus className="w-4 h-4" />
+            지식 추가
+          </Button>
+        </div>
       </div>
 
       {/* 파트 selector + Category filter */}
@@ -184,6 +231,20 @@ export function KnowledgeTable() {
             </select>
           </div>
         )}
+        <div>
+          <label className="block text-xs font-medium text-slate-400 mb-1.5">소스</label>
+          <select
+            value={sourceFilter}
+            onChange={(e) => setSourceFilter(e.target.value)}
+            className="w-36 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
+          >
+            <option value="">전체</option>
+            <option value="manual">수동 등록</option>
+            <option value="csv_import">CSV 임포트</option>
+            <option value="paste_split">텍스트 분할</option>
+            <option value="file_upload">파일 업로드</option>
+          </select>
+        </div>
       </div>
 
       {!selectedNs && (
@@ -207,6 +268,13 @@ export function KnowledgeTable() {
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-3 flex-wrap">
+                  {(item as any).source_file && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-900/40 text-sky-300 font-mono">
+                      {(item as any).source_type === 'csv_import' ? '📊' : (item as any).source_type === 'paste_split' ? '📋' : '📄'}{' '}
+                      {(item as any).source_file}
+                      {(item as any).source_chunk_idx != null && ` #${(item as any).source_chunk_idx}`}
+                    </span>
+                  )}
                   {item.category && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 border border-violet-300 dark:bg-violet-900/40 dark:text-violet-300 dark:border-violet-700/40 font-medium">{item.category}</span>
                   )}
@@ -505,6 +573,284 @@ export function KnowledgeTable() {
           </div>
         </div>
       </Modal>
+
+      {/* CSV Import Modal */}
+      <CsvImportModal
+        isOpen={showCsvImport}
+        onClose={() => setShowCsvImport(false)}
+        namespace={selectedNs}
+        categoryNames={categoryNames}
+        user={user}
+        onSuccess={() => { qc.invalidateQueries({ queryKey: ['knowledge', selectedNs] }); qc.invalidateQueries({ queryKey: ['ingestion-jobs', selectedNs] }); }}
+      />
+
+      {/* Text Split Modal */}
+      <TextSplitModal
+        isOpen={showTextSplit}
+        onClose={() => setShowTextSplit(false)}
+        namespace={selectedNs}
+        categoryNames={categoryNames}
+        user={user}
+        onSuccess={() => { qc.invalidateQueries({ queryKey: ['knowledge', selectedNs] }); qc.invalidateQueries({ queryKey: ['ingestion-jobs', selectedNs] }); }}
+      />
+
+      {/* Ingestion Job History */}
+      {selectedNs && jobs.length > 0 && (
+        <div className="mt-6">
+          <h3 className="text-sm font-medium text-slate-400 mb-2">가져오기 이력</h3>
+          <div className="rounded-xl border border-slate-700 overflow-hidden divide-y divide-slate-700/60">
+            {jobs.slice(0, 5).map((j: IngestionJob) => (
+              <div key={j.id} className="flex items-center gap-3 px-4 py-2 text-xs">
+                <span className={`px-1.5 py-0.5 rounded font-medium ${
+                  j.status === 'completed' ? 'bg-emerald-900/30 text-emerald-400' :
+                  j.status === 'failed' ? 'bg-rose-900/30 text-rose-400' :
+                  'bg-amber-900/30 text-amber-400'
+                }`}>{j.status}</span>
+                <span className="text-slate-300 truncate flex-1">{j.source_file || j.source_type}</span>
+                <span className="text-slate-500">{j.created_chunks}/{j.total_chunks} 건</span>
+                <span className="text-slate-500">{new Date(j.created_at).toLocaleDateString('ko-KR')}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+
+// ── CSV Import Modal ────────────────────────────────────────────────────────
+
+function CsvImportModal({ isOpen, onClose, namespace, categoryNames, user, onSuccess }: {
+  isOpen: boolean; onClose: () => void; namespace: string; categoryNames: string[];
+  user: any; onSuccess: () => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<{ headers: string[]; rows: Record<string, string>[] }>({ headers: [], rows: [] });
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [category, setCategory] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = (f: File | null) => {
+    if (!f) return;
+    setFile(f);
+    setError('');
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        const lines = text.split('\n').filter(l => l.trim());
+        if (lines.length < 2) { setError('데이터가 부족합니다.'); return; }
+        const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+        const rows = lines.slice(1, 6).map(line => {
+          const vals = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+          const obj: Record<string, string> = {};
+          headers.forEach((h, i) => { obj[h] = vals[i] || ''; });
+          return obj;
+        });
+        setPreview({ headers, rows });
+        // 자동 매핑: content 컬럼 추측
+        const contentCol = headers.find(h => /content|내용|설명|description|text/i.test(h));
+        if (contentCol) setMapping(prev => ({ ...prev, content: contentCol }));
+      } catch { setError('CSV 파싱 실패'); }
+    };
+    reader.readAsText(f);
+  };
+
+  const handleSubmit = async () => {
+    if (!file || !mapping.content) return;
+    setLoading(true);
+    setError('');
+    try {
+      const result = await importCsv(file, namespace, mapping, category || undefined);
+      alert(`${result.created}건 등록 완료`);
+      onSuccess();
+      onClose();
+      setFile(null); setPreview({ headers: [], rows: [] }); setMapping({});
+    } catch (e: any) {
+      setError(e.message || '오류 발생');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="CSV 임포트" maxWidth="max-w-2xl">
+      <div className="space-y-4">
+        <div className="border-2 border-dashed border-slate-600 rounded-xl p-6 text-center cursor-pointer hover:border-indigo-500 transition-colors"
+          onClick={() => fileRef.current?.click()}>
+          <input ref={fileRef} type="file" accept=".csv,.tsv" className="hidden"
+            onChange={(e) => handleFile(e.target.files?.[0] ?? null)} />
+          {file ? (
+            <p className="text-sm text-slate-300">{file.name} ({(file.size / 1024).toFixed(1)} KB)</p>
+          ) : (
+            <p className="text-sm text-slate-500">CSV 파일을 선택하세요</p>
+          )}
+        </div>
+
+        {preview.headers.length > 0 && (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              {['content', 'category', 'container_name', 'query_template'].map(field => (
+                <div key={field}>
+                  <label className="text-[10px] text-slate-500 mb-1 block">
+                    {field === 'content' ? '내용 (필수)' : field === 'category' ? '업무구분' : field === 'container_name' ? '컨테이너명' : '쿼리'}
+                  </label>
+                  <select value={mapping[field] || ''} onChange={(e) => setMapping(p => ({ ...p, [field]: e.target.value }))}
+                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2 py-1.5 text-xs text-slate-300">
+                    <option value="">매핑 안함</option>
+                    {preview.headers.map(h => <option key={h} value={h}>{h}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+
+            {categoryNames.length > 0 && !mapping.category && (
+              <div>
+                <label className="text-[10px] text-slate-500 mb-1 block">기본 업무구분 (CSV에 없을 때)</label>
+                <select value={category} onChange={(e) => setCategory(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-600 rounded-lg px-2 py-1.5 text-xs text-slate-300">
+                  <option value="">없음</option>
+                  {categoryNames.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            )}
+
+            <div className="text-xs text-slate-500">미리보기 (처음 5행)</div>
+            <div className="overflow-x-auto rounded-lg border border-slate-700 max-h-40">
+              <table className="w-full text-xs">
+                <thead><tr className="bg-slate-800">
+                  {preview.headers.map(h => <th key={h} className="px-2 py-1 text-left text-slate-400 font-medium">{h}</th>)}
+                </tr></thead>
+                <tbody>{preview.rows.map((r, i) => (
+                  <tr key={i} className="border-t border-slate-700/60">
+                    {preview.headers.map(h => <td key={h} className="px-2 py-1 text-slate-300 truncate max-w-[200px]">{r[h]}</td>)}
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {error && <p className="text-xs text-rose-400">{error}</p>}
+
+        <div className="flex gap-2 justify-end">
+          <Button variant="secondary" size="sm" onClick={onClose}>취소</Button>
+          <Button variant="primary" size="sm" onClick={handleSubmit}
+            disabled={loading || !file || !mapping.content}>
+            {loading ? '등록 중...' : '임포트'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+
+// ── Text Split Modal ────────────────────────────────────────────────────────
+
+function TextSplitModal({ isOpen, onClose, namespace, categoryNames, user, onSuccess }: {
+  isOpen: boolean; onClose: () => void; namespace: string; categoryNames: string[];
+  user: any; onSuccess: () => void;
+}) {
+  const [text, setText] = useState('');
+  const [strategy, setStrategy] = useState('auto');
+  const [category, setCategory] = useState('');
+  const [previewChunks, setPreviewChunks] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handlePreview = async () => {
+    if (!text.trim()) return;
+    try {
+      const result = await previewTextSplit(text, strategy);
+      setPreviewChunks(result.chunks);
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!text.trim()) return;
+    setLoading(true);
+    setError('');
+    try {
+      const result = await importTextSplit(namespace, text, strategy, category || undefined);
+      alert(`${result.chunks}개 청크, ${result.created}건 등록 완료`);
+      onSuccess();
+      onClose();
+      setText(''); setPreviewChunks([]);
+    } catch (e: any) {
+      setError(e.message || '오류 발생');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="대량 텍스트 등록" maxWidth="max-w-2xl">
+      <div className="space-y-4">
+        <textarea
+          rows={12}
+          value={text}
+          onChange={(e) => { setText(e.target.value); setPreviewChunks([]); }}
+          placeholder="여기에 긴 텍스트를 붙여넣으세요...&#10;&#10;## 헤더나 빈 줄, --- 구분선으로 자동 분할됩니다."
+          className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 resize-y min-h-[200px]"
+        />
+
+        <div className="flex gap-3 items-end">
+          <div>
+            <label className="text-[10px] text-slate-500 mb-1 block">분할 기준</label>
+            <select value={strategy} onChange={(e) => { setStrategy(e.target.value); setPreviewChunks([]); }}
+              className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-1.5 text-xs text-slate-300">
+              <option value="auto">자동 감지</option>
+              <option value="heading">## 헤더 기준</option>
+              <option value="blank_line">빈 줄 기준</option>
+              <option value="separator">--- 구분선 기준</option>
+              <option value="none">분할 안함 (1건)</option>
+            </select>
+          </div>
+          {categoryNames.length > 0 && (
+            <div>
+              <label className="text-[10px] text-slate-500 mb-1 block">업무구분</label>
+              <select value={category} onChange={(e) => setCategory(e.target.value)}
+                className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-1.5 text-xs text-slate-300">
+                <option value="">없음</option>
+                {categoryNames.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          )}
+          <Button variant="secondary" size="sm" onClick={handlePreview} disabled={!text.trim()}>
+            미리보기
+          </Button>
+        </div>
+
+        {previewChunks.length > 0 && (
+          <div>
+            <div className="text-xs text-slate-500 mb-1">{previewChunks.length}개 청크로 분할됨</div>
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {previewChunks.map((c, i) => (
+                <div key={i} className="bg-slate-800 rounded-lg px-3 py-2 text-xs text-slate-300">
+                  <span className="text-indigo-400 font-medium">#{i + 1}</span>
+                  <span className="ml-2">{c.slice(0, 120)}{c.length > 120 ? '...' : ''}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {error && <p className="text-xs text-rose-400">{error}</p>}
+
+        <div className="flex gap-2 justify-end">
+          <Button variant="secondary" size="sm" onClick={onClose}>취소</Button>
+          <Button variant="primary" size="sm" onClick={handleSubmit}
+            disabled={loading || !text.trim()}>
+            {loading ? '등록 중...' : `등록${previewChunks.length > 0 ? ` (${previewChunks.length}건)` : ''}`}
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }

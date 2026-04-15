@@ -8,6 +8,7 @@ from shared.embedding import embedding_service
 
 _KNOWLEDGE_COLS = """k.id, n.name AS namespace, k.container_name, k.target_tables,
     k.content, k.query_template, k.base_weight, k.category,
+    k.source_file, k.source_chunk_idx, k.source_type,
     k.created_by_part, k.created_by_user_id,
     k.created_at::text, k.updated_at::text"""
 
@@ -122,6 +123,7 @@ async def delete_knowledge(knowledge_id: int) -> bool:
 async def list_knowledge(namespace: Optional[str] = None) -> list[dict]:
     _cols_with_user = """k.id, n.name AS namespace, k.container_name, k.target_tables,
         k.content, k.query_template, k.base_weight, k.category,
+        k.source_file, k.source_chunk_idx, k.source_type,
         k.created_by_part, k.created_by_user_id, u.username AS created_by_username,
         k.created_at::text, k.updated_at::text"""
     async with get_conn() as conn:
@@ -287,3 +289,144 @@ async def get_glossary_namespace(glossary_id: int) -> Optional[str]:
             "SELECT n.name FROM rag_glossary g JOIN ops_namespace n ON g.namespace_id = n.id WHERE g.id = $1",
             glossary_id,
         )
+
+
+# ─── 벌크 등록 (Ingestion) ──────────────────────────────────────────────────
+
+async def bulk_create_knowledge(
+    namespace: str,
+    items: list[dict],
+    *,
+    source_file: Optional[str] = None,
+    source_type: str = "manual",
+    created_by_part: Optional[str] = None,
+    created_by_user_id: Optional[int] = None,
+) -> dict:
+    """여러 지식을 배치 임베딩으로 한번에 등록.
+
+    Returns:
+        {"created": int, "job_id": int | None}
+    """
+    import json as _json
+
+    async with get_conn() as conn:
+        ns_id = await resolve_namespace_id(conn, namespace)
+        if ns_id is None:
+            raise ValueError(f"Namespace '{namespace}' not found")
+
+    # 인제스천 작업 생성
+    job_id = None
+    if source_file:
+        async with get_conn() as conn:
+            job_id = await conn.fetchval("""
+                INSERT INTO rag_ingestion_job
+                    (namespace_id, source_file, source_type, status, total_chunks,
+                     embedding_model, created_by_user_id)
+                VALUES ($1, $2, $3, 'processing', $4, $5, $6) RETURNING id
+            """, ns_id, source_file, source_type, len(items),
+                "paraphrase-multilingual-mpnet-base-v2", created_by_user_id)
+
+    # 배치 임베딩
+    texts = [item["content"] for item in items]
+    embeddings = await embedding_service.embed_batch(texts)
+
+    # 벌크 INSERT
+    created = 0
+    async with get_conn() as conn:
+        for i, (item, emb) in enumerate(zip(items, embeddings)):
+            await conn.execute("""
+                INSERT INTO rag_knowledge
+                    (namespace_id, container_name, target_tables, content,
+                     query_template, embedding, base_weight, category,
+                     source_file, source_chunk_idx, source_type,
+                     created_by_part, created_by_user_id)
+                VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8, $9, $10, $11, $12, $13)
+            """,
+                ns_id,
+                item.get("container_name"),
+                item.get("target_tables"),
+                item["content"],
+                item.get("query_template"),
+                str(emb),
+                item.get("base_weight", 1.0),
+                item.get("category"),
+                source_file,
+                i,
+                source_type,
+                created_by_part,
+                created_by_user_id,
+            )
+            created += 1
+
+    # 작업 완료 처리
+    if job_id:
+        async with get_conn() as conn:
+            await conn.execute("""
+                UPDATE rag_ingestion_job
+                SET status = 'completed', created_chunks = $1, completed_at = NOW()
+                WHERE id = $2
+            """, created, job_id)
+
+    return {"created": created, "job_id": job_id}
+
+
+async def list_ingestion_jobs(namespace: str) -> list[dict]:
+    """인제스천 작업 이력 조회."""
+    async with get_conn() as conn:
+        ns_id = await resolve_namespace_id(conn, namespace)
+        if ns_id is None:
+            return []
+        rows = await conn.fetch("""
+            SELECT id, namespace_id, source_file, source_type, status,
+                   total_chunks, created_chunks, auto_glossary, auto_fewshot,
+                   chunk_strategy, error_message,
+                   created_at::text, completed_at::text
+            FROM rag_ingestion_job
+            WHERE namespace_id = $1
+            ORDER BY created_at DESC
+            LIMIT 50
+        """, ns_id)
+    return [dict(r) for r in rows]
+
+
+def split_text_to_chunks(
+    text: str,
+    strategy: str = "auto",
+) -> list[str]:
+    """텍스트를 청크로 분할.
+
+    strategy:
+      - auto: ## 헤더 → 빈 줄 → --- 순서로 시도
+      - heading: ## 헤더 기준
+      - blank_line: 빈 줄 (\\n\\n) 기준
+      - separator: --- 기준
+      - none: 분할 안함
+    """
+    import re
+
+    if strategy == "none" or not text.strip():
+        return [text.strip()] if text.strip() else []
+
+    if strategy == "heading" or strategy == "auto":
+        # ## 헤더 기준 분할
+        parts = re.split(r'\n(?=#{1,3}\s)', text)
+        chunks = [p.strip() for p in parts if p.strip()]
+        if len(chunks) > 1 or strategy == "heading":
+            return chunks
+
+    if strategy == "separator" or strategy == "auto":
+        # --- 구분선 기준
+        parts = re.split(r'\n---+\n', text)
+        chunks = [p.strip() for p in parts if p.strip()]
+        if len(chunks) > 1 or strategy == "separator":
+            return chunks
+
+    if strategy == "blank_line" or strategy == "auto":
+        # 빈 줄 기준
+        parts = re.split(r'\n\s*\n', text)
+        chunks = [p.strip() for p in parts if p.strip()]
+        if len(chunks) > 1:
+            return chunks
+
+    # fallback: 전체를 하나의 청크로
+    return [text.strip()]

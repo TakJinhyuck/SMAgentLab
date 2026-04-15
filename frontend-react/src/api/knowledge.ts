@@ -96,6 +96,76 @@ export async function deleteGlossaryItem(id: number): Promise<void> {
   }
 }
 
+// ─── Bulk / Ingestion ───────────────────────────────────────────────────────
+
+export async function bulkCreateKnowledge(
+  namespace: string,
+  items: Array<{ content: string; category?: string; container_name?: string; target_tables?: string[]; query_template?: string }>,
+  sourceFile?: string,
+  sourceType = 'manual',
+): Promise<{ created: number; job_id: number | null }> {
+  return apiFetch('/knowledge/bulk', {
+    method: 'POST',
+    body: JSON.stringify({ namespace, items, source_file: sourceFile, source_type: sourceType }),
+  });
+}
+
+export async function importCsv(
+  file: File,
+  namespace: string,
+  columnMapping: Record<string, string>,
+  category?: string,
+): Promise<{ created: number; job_id: number | null }> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('namespace', namespace);
+  form.append('column_mapping', JSON.stringify(columnMapping));
+  if (category) form.append('category', category);
+  return apiFetch('/knowledge/import/csv', { method: 'POST', body: form });
+}
+
+export async function importTextSplit(
+  namespace: string,
+  rawText: string,
+  strategy = 'auto',
+  category?: string,
+): Promise<{ created: number; job_id: number | null; chunks: number }> {
+  return apiFetch('/knowledge/import/text-split', {
+    method: 'POST',
+    body: JSON.stringify({ namespace, raw_text: rawText, strategy, category }),
+  });
+}
+
+export async function previewTextSplit(
+  rawText: string,
+  strategy = 'auto',
+): Promise<{ chunks: string[]; count: number }> {
+  return apiFetch('/knowledge/import/text-split/preview', {
+    method: 'POST',
+    body: JSON.stringify({ raw_text: rawText, strategy }),
+  });
+}
+
+export interface IngestionJob {
+  id: number;
+  namespace_id: number;
+  source_file: string | null;
+  source_type: string | null;
+  status: string;
+  total_chunks: number;
+  created_chunks: number;
+  auto_glossary: number;
+  auto_fewshot: number;
+  chunk_strategy: string | null;
+  error_message: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export async function getIngestionJobs(namespace: string): Promise<IngestionJob[]> {
+  return apiFetch<IngestionJob[]>(`/knowledge/ingestion-jobs?namespace=${encodeURIComponent(namespace)}`);
+}
+
 // Glossary AI Suggestions
 
 export async function suggestGlossaryTerms(namespace: string, limit: number = 50): Promise<{ suggestions: Array<{ term: string; description: string }>; message: string }> {

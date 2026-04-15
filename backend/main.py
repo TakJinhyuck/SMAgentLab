@@ -912,6 +912,36 @@ SQL: {{sql}}
     """)
 
 
+async def _migrate_knowledge_ingestion(conn) -> None:
+    """v2.13 지식 인제스천 고도화 — 소스 추적 필드 + 인제스천 작업 테이블."""
+    # ── rag_knowledge 소스 추적 필드 추가 ──
+    await conn.execute("ALTER TABLE rag_knowledge ADD COLUMN IF NOT EXISTS source_file VARCHAR(500)")
+    await conn.execute("ALTER TABLE rag_knowledge ADD COLUMN IF NOT EXISTS source_chunk_idx INT")
+    await conn.execute("ALTER TABLE rag_knowledge ADD COLUMN IF NOT EXISTS source_type VARCHAR(50) DEFAULT 'manual'")
+
+    # ── 인제스천 작업 추적 테이블 ──
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS rag_ingestion_job (
+            id              SERIAL PRIMARY KEY,
+            namespace_id    INT REFERENCES ops_namespace(id) ON DELETE CASCADE,
+            source_file     VARCHAR(500),
+            source_type     VARCHAR(50),
+            status          VARCHAR(20) DEFAULT 'processing',
+            total_chunks    INT DEFAULT 0,
+            created_chunks  INT DEFAULT 0,
+            auto_glossary   INT DEFAULT 0,
+            auto_fewshot    INT DEFAULT 0,
+            chunk_strategy  VARCHAR(50),
+            embedding_model VARCHAR(200),
+            analyzer_result JSONB,
+            error_message   TEXT,
+            created_by_user_id INT,
+            created_at      TIMESTAMPTZ DEFAULT NOW(),
+            completed_at    TIMESTAMPTZ
+        )
+    """)
+
+
 async def _run_migrations() -> None:
     """기존 DB 호환용 스키마 마이그레이션 (멱등)."""
     async with get_conn() as conn:
@@ -920,6 +950,7 @@ async def _run_migrations() -> None:
         await _migrate_mcp_tables(conn)
         await _migrate_text2sql_tables(conn)
         await _migrate_system_tables(conn)
+        await _migrate_knowledge_ingestion(conn)
 
 
 @asynccontextmanager

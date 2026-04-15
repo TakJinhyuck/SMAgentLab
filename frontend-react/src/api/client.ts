@@ -49,10 +49,13 @@ export async function apiFetch<T>(
 
   const doFetch = async (authHeaders: Record<string, string>) => {
     const { headers: optHeaders, ...restOptions } = options ?? {};
+    // FormData 전송 시 Content-Type을 생략 (브라우저가 boundary 자동 설정)
+    const isFormData = restOptions.body instanceof FormData;
+    const baseHeaders: Record<string, string> = isFormData ? {} : { 'Content-Type': 'application/json' };
     return fetch(url, {
       ...restOptions,
       headers: {
-        'Content-Type': 'application/json',
+        ...baseHeaders,
         ...authHeaders,
         ...(optHeaders as Record<string, string>),
       },
