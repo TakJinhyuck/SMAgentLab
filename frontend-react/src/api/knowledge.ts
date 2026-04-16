@@ -166,6 +166,53 @@ export async function getIngestionJobs(namespace: string): Promise<IngestionJob[
   return apiFetch<IngestionJob[]>(`/knowledge/ingestion-jobs?namespace=${encodeURIComponent(namespace)}`);
 }
 
+// ─── File Upload (Tier 2) ───────────────────────────────────────────────────
+
+export interface FileUploadResult {
+  created: number;
+  job_id: number | null;
+  chunks: number;
+  auto_glossary: number;
+  source_name: string;
+  page_count: number | null;
+}
+
+export async function importFile(
+  file: File,
+  namespace: string,
+  opts?: { chunkStrategy?: string; category?: string; autoTag?: boolean; autoGlossary?: boolean },
+): Promise<FileUploadResult> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('namespace', namespace);
+  form.append('chunk_strategy', opts?.chunkStrategy ?? 'auto');
+  if (opts?.category) form.append('category', opts.category);
+  if (opts?.autoTag) form.append('auto_tag', 'true');
+  if (opts?.autoGlossary) form.append('auto_glossary', 'true');
+  return apiFetch('/knowledge/import/file', { method: 'POST', body: form });
+}
+
+export interface FilePreviewResult {
+  source_name: string;
+  source_type: string;
+  page_count: number | null;
+  total_chars: number;
+  sections: number;
+  tables: number;
+  chunks: Array<{ idx: number; text: string; title: string | null }>;
+  chunk_count: number;
+}
+
+export async function previewFileUpload(
+  file: File,
+  chunkStrategy = 'auto',
+): Promise<FilePreviewResult> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('chunk_strategy', chunkStrategy);
+  return apiFetch('/knowledge/import/file/preview', { method: 'POST', body: form });
+}
+
 // Glossary AI Suggestions
 
 export async function suggestGlossaryTerms(namespace: string, limit: number = 50): Promise<{ suggestions: Array<{ term: string; description: string }>; message: string }> {

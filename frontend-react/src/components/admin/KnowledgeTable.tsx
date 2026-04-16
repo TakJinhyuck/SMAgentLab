@@ -9,8 +9,11 @@ import {
   importCsv,
   importTextSplit,
   previewTextSplit,
+  importFile,
+  previewFileUpload,
   getIngestionJobs,
   type IngestionJob,
+  type FilePreviewResult,
 } from '../../api/knowledge';
 import { getCategories } from '../../api/namespaces';
 import { useNamespaceAccess } from '../../utils/useNamespaceAccess';
@@ -70,6 +73,7 @@ export function KnowledgeTable() {
   // ── Ingestion 관련 state ──
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [showTextSplit, setShowTextSplit] = useState(false);
+  const [showFileUpload, setShowFileUpload] = useState(false);
   const [showImportMenu, setShowImportMenu] = useState(false);
   const importMenuRef = useRef<HTMLDivElement>(null);
 
@@ -187,6 +191,10 @@ export function KnowledgeTable() {
             </Button>
             {showImportMenu && (
               <div className="absolute right-0 top-full mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 z-50 w-52">
+                <button onClick={() => { setShowFileUpload(true); setShowImportMenu(false); }}
+                  className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 flex items-center gap-2">
+                  <Upload className="w-3.5 h-3.5" /> 파일 업로드 (.pdf .md .txt)
+                </button>
                 <button onClick={() => { setShowCsvImport(true); setShowImportMenu(false); }}
                   className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 flex items-center gap-2">
                   <Upload className="w-3.5 h-3.5" /> CSV/Excel 임포트
@@ -584,6 +592,16 @@ export function KnowledgeTable() {
         onSuccess={() => { qc.invalidateQueries({ queryKey: ['knowledge', selectedNs] }); qc.invalidateQueries({ queryKey: ['ingestion-jobs', selectedNs] }); }}
       />
 
+      {/* File Upload Modal */}
+      <FileUploadModal
+        isOpen={showFileUpload}
+        onClose={() => setShowFileUpload(false)}
+        namespace={selectedNs}
+        categoryNames={categoryNames}
+        user={user}
+        onSuccess={() => { qc.invalidateQueries({ queryKey: ['knowledge', selectedNs] }); qc.invalidateQueries({ queryKey: ['ingestion-jobs', selectedNs] }); }}
+      />
+
       {/* Text Split Modal */}
       <TextSplitModal
         isOpen={showTextSplit}
@@ -848,6 +866,169 @@ function TextSplitModal({ isOpen, onClose, namespace, categoryNames, user, onSuc
           <Button variant="primary" size="sm" onClick={handleSubmit}
             disabled={loading || !text.trim()}>
             {loading ? '등록 중...' : `등록${previewChunks.length > 0 ? ` (${previewChunks.length}건)` : ''}`}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+
+// ── File Upload Modal (Tier 2) ──────────────────────────────────────────────
+
+function FileUploadModal({ isOpen, onClose, namespace, categoryNames, user, onSuccess }: {
+  isOpen: boolean; onClose: () => void; namespace: string; categoryNames: string[];
+  user: any; onSuccess: () => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [strategy, setStrategy] = useState('auto');
+  const [category, setCategory] = useState('');
+  const [autoTag, setAutoTag] = useState(false);
+  const [autoGlossary, setAutoGlossary] = useState(false);
+  const [preview, setPreview] = useState<FilePreviewResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [error, setError] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handlePreview = async () => {
+    if (!file) return;
+    setPreviewing(true);
+    setError('');
+    try {
+      const result = await previewFileUpload(file, strategy);
+      setPreview(result);
+    } catch (e: any) {
+      setError(e.message || '미리보기 실패');
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!file) return;
+    setLoading(true);
+    setError('');
+    try {
+      const result = await importFile(file, namespace, {
+        chunkStrategy: strategy,
+        category: category || undefined,
+        autoTag,
+        autoGlossary,
+      });
+      const parts = [`${result.chunks}개 청크, ${result.created}건 등록 완료`];
+      if (result.auto_glossary > 0) parts.push(`용어 ${result.auto_glossary}건 자동 추출`);
+      if (result.page_count) parts.push(`(${result.page_count}페이지)`);
+      alert(parts.join('\n'));
+      onSuccess();
+      onClose();
+      setFile(null); setPreview(null);
+    } catch (e: any) {
+      setError(e.message || '오류 발생');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const reset = () => {
+    setFile(null); setPreview(null); setError('');
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={() => { onClose(); reset(); }} title="파일 업로드" maxWidth="max-w-2xl">
+      <div className="space-y-4">
+        {/* 파일 선택 영역 */}
+        <div className="border-2 border-dashed border-slate-600 rounded-xl p-6 text-center cursor-pointer hover:border-indigo-500 transition-colors"
+          onClick={() => fileRef.current?.click()}>
+          <input ref={fileRef} type="file" accept=".pdf,.md,.txt,.markdown,.log,.text" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) { setFile(f); setPreview(null); } }} />
+          {file ? (
+            <div>
+              <p className="text-sm text-slate-300">{file.name}</p>
+              <p className="text-xs text-slate-500">{(file.size / 1024).toFixed(1)} KB</p>
+            </div>
+          ) : (
+            <div>
+              <Upload className="w-8 h-8 text-slate-500 mx-auto mb-2" />
+              <p className="text-sm text-slate-500">PDF, Markdown, 텍스트 파일을 선택하세요</p>
+              <p className="text-[10px] text-slate-600 mt-1">.pdf .md .txt</p>
+            </div>
+          )}
+        </div>
+
+        {/* 옵션 */}
+        <div className="flex gap-3 items-end flex-wrap">
+          <div>
+            <label className="text-[10px] text-slate-500 mb-1 block">청킹 전략</label>
+            <select value={strategy} onChange={(e) => { setStrategy(e.target.value); setPreview(null); }}
+              className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-1.5 text-xs text-slate-300">
+              <option value="auto">자동 감지</option>
+              <option value="section">섹션 기반 (헤더)</option>
+              <option value="paragraph">단락 기반 (빈 줄)</option>
+              <option value="fixed">고정 크기</option>
+            </select>
+          </div>
+          {categoryNames.length > 0 && (
+            <div>
+              <label className="text-[10px] text-slate-500 mb-1 block">업무구분</label>
+              <select value={category} onChange={(e) => setCategory(e.target.value)}
+                className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-1.5 text-xs text-slate-300">
+                <option value="">자동 / 없음</option>
+                {categoryNames.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          )}
+          <Button variant="secondary" size="sm" onClick={handlePreview} disabled={!file || previewing}>
+            {previewing ? '분석 중...' : '미리보기'}
+          </Button>
+        </div>
+
+        {/* LLM 자동화 옵션 */}
+        <div className="flex gap-4 text-xs text-slate-400">
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={autoTag} onChange={(e) => setAutoTag(e.target.checked)}
+              className="w-3 h-3 rounded accent-indigo-500" />
+            LLM 자동 태깅 (카테고리/시스템명)
+          </label>
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={autoGlossary} onChange={(e) => setAutoGlossary(e.target.checked)}
+              className="w-3 h-3 rounded accent-indigo-500" />
+            용어집 자동 추출
+          </label>
+        </div>
+
+        {/* 미리보기 결과 */}
+        {preview && (
+          <div className="bg-slate-800/60 rounded-xl p-3 space-y-2">
+            <div className="flex gap-4 text-xs text-slate-400">
+              <span>유형: <span className="text-slate-300">{preview.source_type}</span></span>
+              {preview.page_count && <span>페이지: <span className="text-slate-300">{preview.page_count}</span></span>}
+              <span>섹션: <span className="text-slate-300">{preview.sections}개</span></span>
+              <span>표: <span className="text-slate-300">{preview.tables}개</span></span>
+              <span>청크: <span className="text-indigo-400 font-medium">{preview.chunk_count}개</span></span>
+            </div>
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {preview.chunks.slice(0, 10).map((c) => (
+                <div key={c.idx} className="bg-slate-900 rounded-lg px-3 py-2 text-xs text-slate-300">
+                  <span className="text-indigo-400 font-medium">#{c.idx + 1}</span>
+                  {c.title && <span className="text-amber-400 ml-2">[{c.title}]</span>}
+                  <span className="ml-2">{c.text}{c.text.length >= 200 ? '...' : ''}</span>
+                </div>
+              ))}
+              {preview.chunk_count > 10 && (
+                <p className="text-[10px] text-slate-500 text-center">외 {preview.chunk_count - 10}개 더...</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {error && <p className="text-xs text-rose-400">{error}</p>}
+
+        <div className="flex gap-2 justify-end">
+          <Button variant="secondary" size="sm" onClick={() => { onClose(); reset(); }}>취소</Button>
+          <Button variant="primary" size="sm" onClick={handleSubmit}
+            disabled={loading || !file}>
+            {loading ? '등록 중...' : `등록${preview ? ` (${preview.chunk_count}건)` : ''}`}
           </Button>
         </div>
       </div>

@@ -255,6 +255,178 @@ async def preview_text_split(body: _TextSplitPreviewBody, _: dict = Depends(get_
     return {"chunks": chunks, "count": len(chunks)}
 
 
+# ─── 파일 업로드 + 자동 청킹 (Tier 2) ────────────────────────────────────────
+
+@router.post("/import/file", status_code=201)
+async def import_file(
+    file: UploadFile = File(...),
+    namespace: str = Form(...),
+    chunk_strategy: str = Form(default="auto"),
+    category: Optional[str] = Form(default=None),
+    auto_tag: bool = Form(default=False),
+    auto_glossary: bool = Form(default=False),
+    user: dict = Depends(get_current_user),
+):
+    """파일 업로드 → 파싱 → 청킹 → 벌크 등록.
+
+    지원 포맷: .txt, .md, .pdf
+    chunk_strategy: auto, section, paragraph, fixed
+    auto_tag: True이면 LLM으로 카테고리/컨테이너명 자동 태깅
+    auto_glossary: True이면 LLM으로 용어 자동 추출
+    """
+    await check_namespace_ownership(namespace, user)
+
+    # 파일 파싱
+    from agents.knowledge_rag.ingestion.adapters import parse_file
+    from agents.knowledge_rag.ingestion.chunker import chunk_document
+
+    try:
+        raw = await file.read()
+        doc = parse_file(raw, file.filename or "unknown")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"파일 파싱 실패: {e}")
+
+    # 청킹
+    chunks = chunk_document(doc, strategy=chunk_strategy)
+    if not chunks:
+        raise HTTPException(status_code=400, detail="분할된 청크가 없습니다.")
+
+    # items 구성
+    items = [{"content": c.text, "category": category} for c in chunks]
+
+    # LLM 자동 태깅 (선택적)
+    if auto_tag:
+        try:
+            from agents.knowledge_rag.ingestion.tagger import auto_tag_chunks
+            from service.llm.factory import get_llm_provider
+            from core.security import get_user_api_key
+
+            categories = []
+            try:
+                from agents.knowledge_rag.knowledge.schemas import BulkKnowledgeItem
+                from core.database import get_conn, resolve_namespace_id
+                async with get_conn() as conn:
+                    ns_id = await resolve_namespace_id(conn, namespace)
+                    cat_rows = await conn.fetch(
+                        "SELECT name FROM rag_knowledge_category WHERE namespace_id = $1", ns_id
+                    )
+                categories = [r["name"] for r in cat_rows]
+            except Exception:
+                pass
+
+            llm = get_llm_provider()
+            tag_input = [{"idx": i, "text": c.text} for i, c in enumerate(chunks)]
+            tags = await auto_tag_chunks(tag_input, categories, llm, api_key=get_user_api_key(user))
+
+            # 태그 적용
+            tag_map = {t["idx"]: t for t in tags}
+            for i, item in enumerate(items):
+                tag = tag_map.get(i, {})
+                if tag.get("category"):
+                    item["category"] = tag["category"]
+                if tag.get("container_name"):
+                    item["container_name"] = tag["container_name"]
+                if tag.get("priority_score") is not None:
+                    item["base_weight"] = 0.5 + float(tag["priority_score"]) * 1.5
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("자동 태깅 실패 (무시하고 계속): %s", e)
+
+    # 벌크 등록
+    result = await service.bulk_create_knowledge(
+        namespace=namespace,
+        items=items,
+        source_file=file.filename,
+        source_type="file_upload",
+        created_by_part=user["part"],
+        created_by_user_id=user["id"],
+    )
+
+    # 용어 자동 추출 (선택적)
+    glossary_count = 0
+    if auto_glossary:
+        try:
+            from agents.knowledge_rag.ingestion.tagger import extract_glossary_terms
+            from service.llm.factory import get_llm_provider
+            from core.security import get_user_api_key
+            from core.database import get_conn, resolve_namespace_id
+
+            async with get_conn() as conn:
+                ns_id = await resolve_namespace_id(conn, namespace)
+                existing = await conn.fetch(
+                    "SELECT term FROM rag_glossary WHERE namespace_id = $1", ns_id
+                )
+            existing_terms = [r["term"] for r in existing]
+
+            llm = get_llm_provider()
+            terms = await extract_glossary_terms(
+                doc.raw_text, existing_terms, llm, api_key=get_user_api_key(user),
+            )
+
+            for term_data in terms:
+                try:
+                    await service.create_glossary(
+                        namespace, term_data["term"], term_data.get("description", ""),
+                        created_by_part=user["part"], created_by_user_id=user["id"],
+                    )
+                    glossary_count += 1
+                except Exception:
+                    pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("용어 추출 실패 (무시하고 계속): %s", e)
+
+    # job 업데이트 (용어 수)
+    if result.get("job_id") and glossary_count > 0:
+        try:
+            from core.database import get_conn
+            async with get_conn() as conn:
+                await conn.execute(
+                    "UPDATE rag_ingestion_job SET auto_glossary = $1 WHERE id = $2",
+                    glossary_count, result["job_id"],
+                )
+        except Exception:
+            pass
+
+    return {
+        **result,
+        "chunks": len(chunks),
+        "auto_glossary": glossary_count,
+        "source_name": doc.source_name,
+        "page_count": doc.metadata.get("page_count"),
+    }
+
+
+@router.post("/import/file/preview")
+async def preview_file_upload(
+    file: UploadFile = File(...),
+    chunk_strategy: str = Form(default="auto"),
+    _: dict = Depends(get_current_user),
+):
+    """파일 업로드 미리보기 — 파싱 + 청킹 결과만 반환 (등록 없음)."""
+    from agents.knowledge_rag.ingestion.adapters import parse_file
+    from agents.knowledge_rag.ingestion.chunker import chunk_document
+
+    try:
+        raw = await file.read()
+        doc = parse_file(raw, file.filename or "unknown")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"파일 파싱 실패: {e}")
+
+    chunks = chunk_document(doc, strategy=chunk_strategy)
+
+    return {
+        "source_name": doc.source_name,
+        "source_type": doc.source_type,
+        "page_count": doc.metadata.get("page_count"),
+        "total_chars": len(doc.raw_text),
+        "sections": len(doc.sections),
+        "tables": len(doc.tables),
+        "chunks": [{"idx": c.idx, "text": c.text[:200], "title": c.section_title} for c in chunks],
+        "chunk_count": len(chunks),
+    }
+
+
 # ─── 인제스천 작업 이력 ──────────────────────────────────────────────────────
 
 @router.get("/ingestion-jobs", response_model=list[IngestionJobOut])
