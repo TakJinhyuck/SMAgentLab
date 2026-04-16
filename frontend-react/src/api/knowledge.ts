@@ -173,6 +173,8 @@ export interface FileUploadResult {
   job_id: number | null;
   chunks: number;
   auto_glossary: number;
+  auto_fewshot: number;
+  analyzer: Record<string, unknown> | null;
   source_name: string;
   page_count: number | null;
 }
@@ -180,15 +182,17 @@ export interface FileUploadResult {
 export async function importFile(
   file: File,
   namespace: string,
-  opts?: { chunkStrategy?: string; category?: string; autoTag?: boolean; autoGlossary?: boolean },
+  opts?: { chunkStrategy?: string; category?: string; autoAnalyze?: boolean; autoTag?: boolean; autoGlossary?: boolean; autoFewshot?: boolean },
 ): Promise<FileUploadResult> {
   const form = new FormData();
   form.append('file', file);
   form.append('namespace', namespace);
   form.append('chunk_strategy', opts?.chunkStrategy ?? 'auto');
   if (opts?.category) form.append('category', opts.category);
+  if (opts?.autoAnalyze) form.append('auto_analyze', 'true');
   if (opts?.autoTag) form.append('auto_tag', 'true');
   if (opts?.autoGlossary) form.append('auto_glossary', 'true');
+  if (opts?.autoFewshot) form.append('auto_fewshot', 'true');
   return apiFetch('/knowledge/import/file', { method: 'POST', body: form });
 }
 

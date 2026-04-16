@@ -883,8 +883,10 @@ function FileUploadModal({ isOpen, onClose, namespace, categoryNames, user, onSu
   const [file, setFile] = useState<File | null>(null);
   const [strategy, setStrategy] = useState('auto');
   const [category, setCategory] = useState('');
+  const [autoAnalyze, setAutoAnalyze] = useState(false);
   const [autoTag, setAutoTag] = useState(false);
   const [autoGlossary, setAutoGlossary] = useState(false);
+  const [autoFewshot, setAutoFewshot] = useState(false);
   const [preview, setPreview] = useState<FilePreviewResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [previewing, setPreviewing] = useState(false);
@@ -911,13 +913,17 @@ function FileUploadModal({ isOpen, onClose, namespace, categoryNames, user, onSu
     setError('');
     try {
       const result = await importFile(file, namespace, {
-        chunkStrategy: strategy,
+        chunkStrategy: autoAnalyze ? 'auto' : strategy,
         category: category || undefined,
+        autoAnalyze,
         autoTag,
         autoGlossary,
+        autoFewshot,
       });
       const parts = [`${result.chunks}개 청크, ${result.created}건 등록 완료`];
       if (result.auto_glossary > 0) parts.push(`용어 ${result.auto_glossary}건 자동 추출`);
+      if (result.auto_fewshot > 0) parts.push(`Q&A ${result.auto_fewshot}건 자동 생성`);
+      if (result.analyzer?.doc_type) parts.push(`문서 유형: ${result.analyzer.doc_type}`);
       if (result.page_count) parts.push(`(${result.page_count}페이지)`);
       alert(parts.join('\n'));
       onSuccess();
@@ -960,9 +966,11 @@ function FileUploadModal({ isOpen, onClose, namespace, categoryNames, user, onSu
         <div className="flex gap-3 items-end flex-wrap">
           <div>
             <label className="text-[10px] text-slate-500 mb-1 block">청킹 전략</label>
-            <select value={strategy} onChange={(e) => { setStrategy(e.target.value); setPreview(null); }}
-              className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-1.5 text-xs text-slate-300">
-              <option value="auto">자동 감지</option>
+            <select value={autoAnalyze ? 'auto' : strategy}
+              onChange={(e) => { setStrategy(e.target.value); setPreview(null); }}
+              disabled={autoAnalyze}
+              className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-1.5 text-xs text-slate-300 disabled:opacity-50">
+              <option value="auto">{autoAnalyze ? 'AI가 자동 결정' : '자동 감지'}</option>
               <option value="section">섹션 기반 (헤더)</option>
               <option value="paragraph">단락 기반 (빈 줄)</option>
               <option value="fixed">고정 크기</option>
@@ -984,7 +992,12 @@ function FileUploadModal({ isOpen, onClose, namespace, categoryNames, user, onSu
         </div>
 
         {/* LLM 자동화 옵션 */}
-        <div className="flex gap-4 text-xs text-slate-400">
+        <div className="grid grid-cols-2 gap-2 text-xs text-slate-400">
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={autoAnalyze} onChange={(e) => setAutoAnalyze(e.target.checked)}
+              className="w-3 h-3 rounded accent-violet-500" />
+            AI 문서 분석 (전략 자동 결정)
+          </label>
           <label className="flex items-center gap-1.5 cursor-pointer">
             <input type="checkbox" checked={autoTag} onChange={(e) => setAutoTag(e.target.checked)}
               className="w-3 h-3 rounded accent-indigo-500" />
@@ -994,6 +1007,11 @@ function FileUploadModal({ isOpen, onClose, namespace, categoryNames, user, onSu
             <input type="checkbox" checked={autoGlossary} onChange={(e) => setAutoGlossary(e.target.checked)}
               className="w-3 h-3 rounded accent-indigo-500" />
             용어집 자동 추출
+          </label>
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" checked={autoFewshot} onChange={(e) => setAutoFewshot(e.target.checked)}
+              className="w-3 h-3 rounded accent-emerald-500" />
+            Q&A 자동 생성 (Few-shot)
           </label>
         </div>
 

@@ -263,16 +263,20 @@ async def import_file(
     namespace: str = Form(...),
     chunk_strategy: str = Form(default="auto"),
     category: Optional[str] = Form(default=None),
+    auto_analyze: bool = Form(default=False),
     auto_tag: bool = Form(default=False),
     auto_glossary: bool = Form(default=False),
+    auto_fewshot: bool = Form(default=False),
     user: dict = Depends(get_current_user),
 ):
     """파일 업로드 → 파싱 → 청킹 → 벌크 등록.
 
     지원 포맷: .txt, .md, .pdf
     chunk_strategy: auto, section, paragraph, fixed
+    auto_analyze: True이면 LLM Analyzer Agent로 전략/메타데이터 자동 결정
     auto_tag: True이면 LLM으로 카테고리/컨테이너명 자동 태깅
     auto_glossary: True이면 LLM으로 용어 자동 추출
+    auto_fewshot: True이면 LLM으로 Q&A 자동 생성 → fewshot candidate
     """
     await check_namespace_ownership(namespace, user)
 
@@ -286,13 +290,35 @@ async def import_file(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"파일 파싱 실패: {e}")
 
+    # Analyzer Agent (선택적) — 청킹 전에 문서 분석
+    analyzer_result = None
+    if auto_analyze:
+        try:
+            from agents.knowledge_rag.ingestion.analyzer import analyze_document
+            from service.llm.factory import get_llm_provider
+            from core.security import get_user_api_key
+
+            llm = get_llm_provider()
+            analyzer_result = await analyze_document(doc.raw_text, llm, api_key=get_user_api_key(user))
+
+            # 분석 결과로 전략 오버라이드
+            chunk_strategy = analyzer_result.get("chunk_strategy", chunk_strategy)
+            if not category and analyzer_result.get("suggested_categories"):
+                category = analyzer_result["suggested_categories"][0]
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Analyzer 실패 (기존 전략 사용): %s", e)
+
     # 청킹
     chunks = chunk_document(doc, strategy=chunk_strategy)
     if not chunks:
         raise HTTPException(status_code=400, detail="분할된 청크가 없습니다.")
 
     # items 구성
-    items = [{"content": c.text, "category": category} for c in chunks]
+    base_weight = 1.0
+    if analyzer_result and analyzer_result.get("priority_score") is not None:
+        base_weight = 0.5 + float(analyzer_result["priority_score"]) * 1.5
+    items = [{"content": c.text, "category": category, "base_weight": base_weight} for c in chunks]
 
     # LLM 자동 태깅 (선택적)
     if auto_tag:
@@ -376,14 +402,44 @@ async def import_file(
             import logging
             logging.getLogger(__name__).warning("용어 추출 실패 (무시하고 계속): %s", e)
 
-    # job 업데이트 (용어 수)
-    if result.get("job_id") and glossary_count > 0:
+    # 자동 Q&A 생성 (선택적)
+    fewshot_count = 0
+    if auto_fewshot:
+        try:
+            from agents.knowledge_rag.ingestion.qa_gen import bulk_generate_qa
+            from service.llm.factory import get_llm_provider
+            from core.security import get_user_api_key
+            from core.database import get_conn, resolve_namespace_id
+            from shared.embedding import embedding_service
+
+            llm = get_llm_provider()
+            # 상위 5개 청크에서만 Q&A 생성 (비용 절약)
+            qa_input = [{"idx": i, "content": c.text} for i, c in enumerate(chunks[:5])]
+            qa_pairs = await bulk_generate_qa(qa_input, llm, api_key=get_user_api_key(user))
+
+            async with get_conn() as conn:
+                ns_id = await resolve_namespace_id(conn, namespace)
+                for qa in qa_pairs:
+                    emb = await embedding_service.embed(qa["question"])
+                    await conn.execute("""
+                        INSERT INTO rag_fewshot (namespace_id, question, answer, status, embedding)
+                        VALUES ($1, $2, $3, 'candidate', $4::vector)
+                    """, ns_id, qa["question"], qa["answer"], str(emb))
+                    fewshot_count += 1
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Q&A 자동 생성 실패 (무시하고 계속): %s", e)
+
+    # job 업데이트 (용어 수 + fewshot 수)
+    if result.get("job_id") and (glossary_count > 0 or fewshot_count > 0):
         try:
             from core.database import get_conn
             async with get_conn() as conn:
                 await conn.execute(
-                    "UPDATE rag_ingestion_job SET auto_glossary = $1 WHERE id = $2",
-                    glossary_count, result["job_id"],
+                    "UPDATE rag_ingestion_job SET auto_glossary = $1, auto_fewshot = $2, analyzer_result = $3 WHERE id = $4",
+                    glossary_count, fewshot_count,
+                    json.dumps(analyzer_result, ensure_ascii=False) if analyzer_result else None,
+                    result["job_id"],
                 )
         except Exception:
             pass
@@ -392,6 +448,8 @@ async def import_file(
         **result,
         "chunks": len(chunks),
         "auto_glossary": glossary_count,
+        "auto_fewshot": fewshot_count,
+        "analyzer": analyzer_result,
         "source_name": doc.source_name,
         "page_count": doc.metadata.get("page_count"),
     }
