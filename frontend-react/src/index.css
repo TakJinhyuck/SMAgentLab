@@ -231,10 +231,27 @@ body {
 [data-theme="light"] .text-blue-300      { color: rgb(37 99 235) !important; }
 [data-theme="light"] .border-blue-500   { border-color: rgb(59 130 246) !important; }
 
-/* ── Violet / Sky / Teal (DebugPanel) ── */
+/* ── Violet ── */
+[data-theme="light"] .bg-violet-900\/40  { background-color: rgb(237 233 254 / 0.6) !important; }
+[data-theme="light"] .bg-violet-900\/30  { background-color: rgb(237 233 254 / 0.5) !important; }
+[data-theme="light"] .border-violet-700\/40 { border-color: rgb(196 181 253 / 0.5) !important; }
+[data-theme="light"] .text-violet-300    { color: rgb(109 40 217) !important; }
 [data-theme="light"] .text-violet-400    { color: rgb(124 58 237) !important; }
+
+/* ── Sky ── */
+[data-theme="light"] .bg-sky-900\/40     { background-color: rgb(224 242 254 / 0.7) !important; }
+[data-theme="light"] .text-sky-300       { color: rgb(2 132 199) !important; }
 [data-theme="light"] .text-sky-400       { color: rgb(2 132 199) !important; }
+
+/* ── Teal ── */
 [data-theme="light"] .text-teal-400      { color: rgb(13 148 136) !important; }
+
+/* ── Indigo deep (active card / form borders) ── */
+[data-theme="light"] .bg-indigo-950\/40  { background-color: rgb(224 231 255 / 0.5) !important; }
+[data-theme="light"] .bg-indigo-900\/60  { background-color: rgb(224 231 255 / 0.6) !important; }
+[data-theme="light"] .bg-indigo-800\/50  { background-color: rgb(224 231 255 / 0.5) !important; }
+[data-theme="light"] .border-indigo-800\/40 { border-color: rgb(165 180 252 / 0.5) !important; }
+[data-theme="light"] .border-indigo-700\/30 { border-color: rgb(165 180 252 / 0.3) !important; }
 
 /* ── Light mode: soften accent buttons/badges that use -600 bg ── */
 [data-theme="light"] .bg-indigo-600  { background-color: rgb(79 70 229) !important; }
