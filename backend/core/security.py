@@ -73,8 +73,19 @@ def decrypt_api_key(encrypted_key: str) -> str:
 
 
 def get_user_api_key(user: dict) -> str | None:
-    """사용자의 암호화된 API Key를 복호화. 없거나 실패하면 None."""
+    """사용자의 암호화된 LLM API Key를 복호화. 없거나 실패하면 None."""
     encrypted = user.get("encrypted_llm_api_key")
+    if not encrypted:
+        return None
+    try:
+        return decrypt_api_key(encrypted)
+    except Exception:
+        return None
+
+
+def get_user_confluence_pat(user: dict) -> str | None:
+    """사용자의 암호화된 Confluence PAT를 복호화. 없거나 실패하면 None."""
+    encrypted = user.get("encrypted_confluence_pat")
     if not encrypted:
         return None
     try:

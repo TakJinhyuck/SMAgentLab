@@ -14,7 +14,9 @@ import {
   type IngestionJob,
 } from '../../api/knowledge';
 import { getCategories } from '../../api/namespaces';
+import { updateConfluencePAT, deleteConfluencePAT } from '../../api/auth';
 import { useNamespaceAccess } from '../../utils/useNamespaceAccess';
+import { useAuthStore } from '../../store/useAuthStore';
 import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
 import { Badge } from '../ui/Badge';
@@ -1079,8 +1081,8 @@ function UrlForm({ namespace, categoryNames, onSuccess, onCancel }: {
   namespace: string; categoryNames: string[];
   onSuccess: () => void; onCancel: () => void;
 }) {
+  const { user, updateUser } = useAuthStore();
   const [url, setUrl] = useState('');
-  const [token, setToken] = useState('');
   const [category, setCategory] = useState('');
   const [reviewChunks, setReviewChunks] = useState<ReviewChunk[]>([]);
   const [sourceMeta, setSourceMeta] = useState<{ name: string; type: string } | null>(null);
@@ -1090,13 +1092,21 @@ function UrlForm({ namespace, categoryNames, onSuccess, onCancel }: {
   const [error, setError] = useState('');
   const [done, setDone] = useState('');
 
+  // PAT 등록 모달
+  const [showPatModal, setShowPatModal] = useState(false);
+  const [patInput, setPatInput] = useState('');
+  const [patLoading, setPatLoading] = useState(false);
+  const [patError, setPatError] = useState('');
+
   const isConfluence = url.includes('confluence') || url.includes('confl.');
+  const hasPat = !!user?.has_confluence_pat;
 
   const handleOpenReview = async () => {
     if (!url.trim()) return;
+    if (isConfluence && !hasPat) { setShowPatModal(true); return; }
     setPreviewing(true); setError('');
     try {
-      const result = await previewUrl(namespace, url.trim(), token || undefined);
+      const result = await previewUrl(namespace, url.trim());
       setSourceMeta({ name: result.source_name, type: result.source_type });
       setReviewChunks(result.chunks.map(c => ({ ...c, selected: true })));
       setShowReview(true);
@@ -1116,6 +1126,24 @@ function UrlForm({ namespace, categoryNames, onSuccess, onCancel }: {
       onSuccess();
     } catch (e: any) { setError(e.message || '오류 발생'); }
     finally { setLoading(false); }
+  };
+
+  const handleSavePat = async () => {
+    if (!patInput.trim()) return;
+    setPatLoading(true); setPatError('');
+    try {
+      await updateConfluencePAT(patInput.trim());
+      if (user) updateUser({ ...user, has_confluence_pat: true });
+      setShowPatModal(false); setPatInput('');
+    } catch (e: any) { setPatError(e.message || 'PAT 저장 실패'); }
+    finally { setPatLoading(false); }
+  };
+
+  const handleDeletePat = async () => {
+    try {
+      await deleteConfluencePAT();
+      if (user) updateUser({ ...user, has_confluence_pat: false });
+    } catch { /* ignore */ }
   };
 
   return (
@@ -1139,17 +1167,24 @@ function UrlForm({ namespace, categoryNames, onSuccess, onCancel }: {
       </div>
 
       {isConfluence && (
-        <div>
-          <label className="block text-xs font-medium text-slate-400 mb-1">
-            Confluence Personal Access Token <span className="text-rose-400">*</span>
-          </label>
-          <input
-            type="password"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder="Confluence 계정 → 프로필 → Personal Access Token"
-            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 placeholder:text-slate-600"
-          />
+        <div className="flex items-center gap-3 p-3 bg-slate-900/60 rounded-lg border border-slate-700">
+          {hasPat ? (
+            <>
+              <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span className="text-xs text-slate-300 flex-1">Confluence PAT 등록됨</span>
+              <button onClick={() => { setPatInput(''); setShowPatModal(true); }}
+                className="text-xs text-indigo-400 hover:text-indigo-300">변경</button>
+              <button onClick={handleDeletePat}
+                className="text-xs text-rose-400 hover:text-rose-300">삭제</button>
+            </>
+          ) : (
+            <>
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+              <span className="text-xs text-slate-400 flex-1">Confluence PAT 미등록 — 수집 시 등록 필요</span>
+              <button onClick={() => setShowPatModal(true)}
+                className="text-xs text-indigo-400 hover:text-indigo-300">등록</button>
+            </>
+          )}
         </div>
       )}
 
@@ -1170,7 +1205,7 @@ function UrlForm({ namespace, categoryNames, onSuccess, onCancel }: {
       <div className="flex gap-2 justify-end pt-1">
         <Button variant="ghost" size="sm" onClick={onCancel}>취소</Button>
         <Button variant="primary" size="sm" onClick={handleOpenReview}
-          disabled={!url.trim() || previewing || (isConfluence && !token)}>
+          disabled={!url.trim() || previewing}>
           {previewing ? '수집 중...' : '수집 & 청크 검토'}
         </Button>
       </div>
@@ -1183,6 +1218,39 @@ function UrlForm({ namespace, categoryNames, onSuccess, onCancel }: {
         loading={loading}
         sourceName={sourceMeta?.name ?? url}
       />
+
+      {/* Confluence PAT 등록 모달 */}
+      {showPatModal && (
+        <Modal isOpen onClose={() => setShowPatModal(false)} title="Confluence PAT 등록">
+          <div className="space-y-4">
+            <p className="text-xs text-slate-400">
+              Confluence 계정 → 프로필 → Personal Access Token 에서 발급하세요.
+              PAT는 암호화하여 개인 계정에 저장됩니다.
+            </p>
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">
+                Personal Access Token <span className="text-rose-400">*</span>
+              </label>
+              <input
+                type="password"
+                value={patInput}
+                onChange={(e) => setPatInput(e.target.value)}
+                placeholder="PAT를 입력하세요"
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
+                autoFocus
+              />
+            </div>
+            {patError && <p className="text-xs text-rose-400">{patError}</p>}
+            <div className="flex gap-2 justify-end">
+              <Button variant="ghost" size="sm" onClick={() => setShowPatModal(false)}>취소</Button>
+              <Button variant="primary" size="sm" onClick={handleSavePat}
+                disabled={!patInput.trim() || patLoading}>
+                {patLoading ? '저장 중...' : '저장'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

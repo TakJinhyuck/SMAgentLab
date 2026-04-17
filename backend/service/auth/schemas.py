@@ -40,6 +40,10 @@ class ApiKeyUpdateRequest(BaseModel):
     llm_api_key: str
 
 
+class ConfluencePATRequest(BaseModel):
+    pat: str
+
+
 class UserOut(BaseModel):
     id: int
     username: str
@@ -47,6 +51,7 @@ class UserOut(BaseModel):
     part: str
     is_active: bool
     has_api_key: bool
+    has_confluence_pat: bool = False
     created_at: str
 
 

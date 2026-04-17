@@ -6,6 +6,7 @@ export interface User {
   part: string;
   is_active: boolean;
   has_api_key: boolean;
+  has_confluence_pat?: boolean;
   created_at: string;
 }
 
