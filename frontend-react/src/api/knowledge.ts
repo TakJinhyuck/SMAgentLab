@@ -209,12 +209,62 @@ export interface FilePreviewResult {
 
 export async function previewFileUpload(
   file: File,
-  chunkStrategy = 'auto',
 ): Promise<FilePreviewResult> {
   const form = new FormData();
   form.append('file', file);
-  form.append('chunk_strategy', chunkStrategy);
   return apiFetch('/knowledge/import/file/preview', { method: 'POST', body: form });
+}
+
+// ─── URL / Confluence 인제스천 ───────────────────────────────────────────────
+
+export interface UrlImportResult {
+  created: number;
+  job_id: number | null;
+  chunks: number;
+  auto_glossary: number;
+  source_name: string;
+  source_type: string;
+  url: string;
+}
+
+export interface UrlPreviewResult {
+  source_name: string;
+  source_type: string;
+  total_chars: number;
+  sections: number;
+  chunks: Array<{ idx: number; text: string; title: string | null }>;
+  chunk_count: number;
+  url: string;
+}
+
+export async function importFromUrl(
+  namespace: string,
+  url: string,
+  opts?: { confluenceToken?: string; chunkStrategy?: string; category?: string; autoTag?: boolean; autoGlossary?: boolean },
+): Promise<UrlImportResult> {
+  return apiFetch('/knowledge/import/url', {
+    method: 'POST',
+    body: JSON.stringify({
+      namespace,
+      url,
+      confluence_token: opts?.confluenceToken || null,
+      chunk_strategy: opts?.chunkStrategy ?? 'auto',
+      category: opts?.category || null,
+      auto_tag: opts?.autoTag ?? false,
+      auto_glossary: opts?.autoGlossary ?? false,
+    }),
+  });
+}
+
+export async function previewUrl(
+  namespace: string,
+  url: string,
+  confluenceToken?: string,
+): Promise<UrlPreviewResult> {
+  return apiFetch('/knowledge/import/url/preview', {
+    method: 'POST',
+    body: JSON.stringify({ namespace, url, confluence_token: confluenceToken || null }),
+  });
 }
 
 // Glossary AI Suggestions

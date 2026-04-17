@@ -249,10 +249,24 @@ class _TextSplitPreviewBody(_BM):
 
 
 @router.post("/import/text-split/preview")
-async def preview_text_split(body: _TextSplitPreviewBody, _: dict = Depends(get_current_user)):
-    """텍스트 분할 미리보기 (등록 없이 결과만 반환)."""
-    chunks = service.split_text_to_chunks(body.raw_text, body.strategy)
-    return {"chunks": chunks, "count": len(chunks)}
+async def preview_text_split(body: _TextSplitPreviewBody, user: dict = Depends(get_current_user)):
+    """텍스트 분할 미리보기 — LLM Analyzer로 전략 자동 결정."""
+    strategy = body.strategy
+    detected_strategy = strategy
+
+    try:
+        from agents.knowledge_rag.ingestion.analyzer import analyze_document
+        from service.llm.factory import get_llm_provider
+        from core.security import get_user_api_key
+        llm = get_llm_provider()
+        analysis = await analyze_document(body.raw_text, llm, api_key=get_user_api_key(user))
+        detected_strategy = analysis.get("chunk_strategy", "auto")
+        strategy = detected_strategy
+    except Exception:
+        pass
+
+    chunks = service.split_text_to_chunks(body.raw_text, strategy)
+    return {"chunks": chunks, "count": len(chunks), "detected_strategy": detected_strategy}
 
 
 # ─── 파일 업로드 + 자동 청킹 (Tier 2) ────────────────────────────────────────
@@ -458,10 +472,9 @@ async def import_file(
 @router.post("/import/file/preview")
 async def preview_file_upload(
     file: UploadFile = File(...),
-    chunk_strategy: str = Form(default="auto"),
-    _: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ):
-    """파일 업로드 미리보기 — 파싱 + 청킹 결과만 반환 (등록 없음)."""
+    """파일 업로드 미리보기 — LLM Analyzer로 전략 자동 결정 후 청킹 결과 반환."""
     from agents.knowledge_rag.ingestion.adapters import parse_file
     from agents.knowledge_rag.ingestion.chunker import chunk_document
 
@@ -471,7 +484,20 @@ async def preview_file_upload(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"파일 파싱 실패: {e}")
 
-    chunks = chunk_document(doc, strategy=chunk_strategy)
+    strategy = "auto"
+    detected_strategy = "auto"
+    try:
+        from agents.knowledge_rag.ingestion.analyzer import analyze_document
+        from service.llm.factory import get_llm_provider
+        from core.security import get_user_api_key
+        llm = get_llm_provider()
+        analysis = await analyze_document(doc.raw_text, llm, api_key=get_user_api_key(user))
+        detected_strategy = analysis.get("chunk_strategy", "auto")
+        strategy = detected_strategy
+    except Exception:
+        pass
+
+    chunks = chunk_document(doc, strategy=strategy)
 
     return {
         "source_name": doc.source_name,
@@ -482,6 +508,150 @@ async def preview_file_upload(
         "tables": len(doc.tables),
         "chunks": [{"idx": c.idx, "text": c.text[:200], "title": c.section_title} for c in chunks],
         "chunk_count": len(chunks),
+        "detected_strategy": detected_strategy,
+    }
+
+
+# ─── URL / Confluence 인제스천 ────────────────────────────────────────────────
+
+class _UrlImportBody(_BM):
+    namespace: str
+    url: str
+    confluence_token: Optional[str] = None
+    chunk_strategy: str = "auto"
+    category: Optional[str] = None
+    auto_tag: bool = False
+    auto_glossary: bool = False
+
+
+@router.post("/import/url", status_code=201)
+async def import_from_url(body: _UrlImportBody, user: dict = Depends(get_current_user)):
+    """URL(일반 웹 or Confluence) → 텍스트 추출 → 청킹 → 벌크 등록."""
+    await check_namespace_ownership(body.namespace, user)
+
+    from agents.knowledge_rag.ingestion.web_crawler import fetch_url
+    from agents.knowledge_rag.ingestion.chunker import chunk_document
+
+    try:
+        doc = await fetch_url(body.url, confluence_token=body.confluence_token)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"URL 수집 실패: {e}")
+
+    chunks = chunk_document(doc, strategy=body.chunk_strategy)
+    if not chunks:
+        raise HTTPException(status_code=400, detail="수집된 콘텐츠가 없습니다.")
+
+    items = [{"content": c.text, "category": body.category} for c in chunks]
+
+    # LLM 자동 태깅 (선택적)
+    if body.auto_tag:
+        try:
+            from agents.knowledge_rag.ingestion.tagger import auto_tag_chunks
+            from service.llm.factory import get_llm_provider
+            from core.security import get_user_api_key
+
+            llm = get_llm_provider()
+            tag_input = [{"idx": i, "text": c.text} for i, c in enumerate(chunks)]
+            tags = await auto_tag_chunks(tag_input, [], llm, api_key=get_user_api_key(user))
+            tag_map = {t["idx"]: t for t in tags}
+            for i, item in enumerate(items):
+                tag = tag_map.get(i, {})
+                if tag.get("category"):
+                    item["category"] = tag["category"]
+                if tag.get("container_name"):
+                    item["container_name"] = tag["container_name"]
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("자동 태깅 실패 (무시하고 계속): %s", e)
+
+    result = await service.bulk_create_knowledge(
+        namespace=body.namespace,
+        items=items,
+        source_file=body.url,
+        source_type=doc.source_type,
+        created_by_part=user["part"],
+        created_by_user_id=user["id"],
+    )
+
+    # 용어 자동 추출 (선택적)
+    glossary_count = 0
+    if body.auto_glossary:
+        try:
+            from agents.knowledge_rag.ingestion.tagger import extract_glossary_terms
+            from service.llm.factory import get_llm_provider
+            from core.security import get_user_api_key
+            from core.database import get_conn, resolve_namespace_id
+
+            async with get_conn() as conn:
+                ns_id = await resolve_namespace_id(conn, body.namespace)
+                existing = await conn.fetch("SELECT term FROM rag_glossary WHERE namespace_id = $1", ns_id)
+            existing_terms = [r["term"] for r in existing]
+
+            llm = get_llm_provider()
+            terms = await extract_glossary_terms(
+                doc.raw_text, existing_terms, llm, api_key=get_user_api_key(user),
+            )
+            for term_data in terms:
+                try:
+                    await service.create_glossary(
+                        body.namespace, term_data["term"], term_data.get("description", ""),
+                        created_by_part=user["part"], created_by_user_id=user["id"],
+                    )
+                    glossary_count += 1
+                except Exception:
+                    pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("용어 추출 실패 (무시하고 계속): %s", e)
+
+    return {
+        **result,
+        "chunks": len(chunks),
+        "auto_glossary": glossary_count,
+        "source_name": doc.source_name,
+        "source_type": doc.source_type,
+        "url": body.url,
+    }
+
+
+@router.post("/import/url/preview")
+async def preview_url(body: _UrlImportBody, user: dict = Depends(get_current_user)):
+    """URL 수집 미리보기 — LLM Analyzer로 전략 자동 결정 후 청킹 결과 반환."""
+    from agents.knowledge_rag.ingestion.web_crawler import fetch_url
+    from agents.knowledge_rag.ingestion.chunker import chunk_document
+
+    try:
+        doc = await fetch_url(body.url, confluence_token=body.confluence_token)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"URL 수집 실패: {e}")
+
+    strategy = "auto"
+    detected_strategy = "auto"
+    try:
+        from agents.knowledge_rag.ingestion.analyzer import analyze_document
+        from service.llm.factory import get_llm_provider
+        from core.security import get_user_api_key
+        llm = get_llm_provider()
+        analysis = await analyze_document(doc.raw_text, llm, api_key=get_user_api_key(user))
+        detected_strategy = analysis.get("chunk_strategy", "auto")
+        strategy = detected_strategy
+    except Exception:
+        pass
+
+    chunks = chunk_document(doc, strategy=strategy)
+    return {
+        "source_name": doc.source_name,
+        "source_type": doc.source_type,
+        "total_chars": len(doc.raw_text),
+        "sections": len(doc.sections),
+        "chunks": [{"idx": c.idx, "text": c.text[:200], "title": c.section_title} for c in chunks],
+        "chunk_count": len(chunks),
+        "detected_strategy": detected_strategy,
+        "url": body.url,
     }
 
 

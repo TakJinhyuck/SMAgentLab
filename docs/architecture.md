@@ -1,4 +1,4 @@
-# Ops-Navigator 시스템 아키텍처 (v2.12)
+# Ops-Navigator 시스템 아키텍처 (v2.13)
 
 ## 개요
 
@@ -6,6 +6,7 @@ Ops-Navigator는 IT 운영팀의 반복적인 조회·확인 업무를 자동화
 사용자는 에이전트를 선택해 목적에 맞는 AI를 사용한다: 지식 기반 Q&A(KnowledgeRAG) 또는 자연어 → SQL 쿼리 실행(Text-to-SQL).
 
 **주요 이력 요약**
+- v2.13: URL / Confluence 인제스천 — 일반 웹 페이지(httpx + BeautifulSoup) + Confluence REST API(PAT 토큰) 단일 페이지 수집. 등록 전 Human-in-the-loop 최종 확인 모달. 라이트 모드 색상 개선
 - v2.12: 지식 인제스천 고도화 Tier 1~3 — CSV 임포트 + 텍스트 분할(heading/paragraph/fixed) + 파일 업로드(.txt/.md/.pdf) + LLM Analyzer Agent + LLM 자동 태깅 + 용어 자동 추출 + Q&A 자동 생성(fewshot candidate)
 - v2.11: Oracle 지원 + Dialect 패턴 리팩터링 (PgDialect/MysqlDialect/SqliteDialect/OracleDialect) + sql_target_db.schema_name 컬럼 추가 + Pagination 상하 분리
 - v2.10: 스키마 스캔 diff 방식 개선 + ERD/용어 고아 자동 정리 + 스캔 리포트 모달 + ERD 검색·양방향 싱크
@@ -86,12 +87,13 @@ backend/
 │   │   ├── agent.py     #   KnowledgeRagAgent — 하이브리드 검색 + LLM 스트리밍
 │   │   ├── knowledge/   #   지식/용어집 CRUD + 하이브리드 검색 (retrieval.py)
 │   │   ├── ingestion/   #   지식 인제스천 파이프라인 (Tier 1~3)
-│   │   │   ├── adapters.py  #   파일 파싱 (.txt/.md/.pdf → ParsedDocument)
-│   │   │   ├── chunker.py   #   청킹 엔진 (section/paragraph/fixed/auto)
-│   │   │   ├── analyzer.py  #   LLM Analyzer Agent (doc_type, chunk_strategy 자동 결정)
-│   │   │   ├── tagger.py    #   LLM 자동 태깅 + 용어 추출
-│   │   │   ├── qa_gen.py    #   LLM Q&A 자동 생성 → fewshot candidate
-│   │   │   └── utils.py     #   공통 JSON 파싱 헬퍼
+│   │   │   ├── adapters.py      #   파일 파싱 (.txt/.md/.pdf → ParsedDocument)
+│   │   │   ├── chunker.py       #   청킹 엔진 (section/paragraph/fixed/auto)
+│   │   │   ├── analyzer.py      #   LLM Analyzer Agent (doc_type, chunk_strategy 자동 결정)
+│   │   │   ├── tagger.py        #   LLM 자동 태깅 + 용어 추출
+│   │   │   ├── qa_gen.py        #   LLM Q&A 자동 생성 → fewshot candidate
+│   │   │   ├── web_crawler.py   #   URL/Confluence 수집 (httpx + BeautifulSoup + Confluence REST API)
+│   │   │   └── utils.py         #   공통 JSON 파싱 헬퍼
 │   │   └── fewshot/     #   Few-shot CRUD (status: active/candidate)
 │   ├── mcp_tool/
 │   │   └── agent.py     #   McpToolAgent — 3-case 플로우 + RAG + 감사 로그
@@ -295,6 +297,8 @@ sql_schema_vector     -- 스키마 벡터 인덱스
 | `POST` | `/api/knowledge/import/text-split/preview` | 텍스트 분할 미리보기 (등록 없음) |
 | `POST` | `/api/knowledge/import/file` | 파일 업로드(.txt/.md/.pdf) → 파싱 → 청킹 → 벌크 등록 (Analyzer·태깅·용어추출·Q&A 선택적) |
 | `POST` | `/api/knowledge/import/file/preview` | 파일 파싱+청킹 미리보기 (등록 없음) |
+| `POST` | `/api/knowledge/import/url` | URL/Confluence 페이지 수집 → 청킹 → 벌크 등록 (PAT 토큰 선택적) |
+| `POST` | `/api/knowledge/import/url/preview` | URL 수집 미리보기 (등록 없음) |
 | `GET` | `/api/knowledge/ingestion-jobs` | 인제스천 작업 이력 조회 |
 | `GET` | `/api/knowledge/glossary` | 용어집 목록 |
 | `POST` | `/api/knowledge/glossary` | 용어 신규 등록 (임베딩 자동 생성) |
