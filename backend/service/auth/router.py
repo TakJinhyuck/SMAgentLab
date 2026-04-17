@@ -8,7 +8,7 @@ from service.auth.service import RegisterError, LoginError
 from service.auth.schemas import (
     RegisterRequest, LoginRequest, TokenResponse,
     RefreshRequest, AccessTokenResponse,
-    PasswordChangeRequest, ApiKeyUpdateRequest,
+    PasswordChangeRequest, ApiKeyUpdateRequest, ConfluencePATRequest,
     UserOut, UserAdminUpdate,
     PartCreate, PartOut,
 )
@@ -24,6 +24,7 @@ def _to_user_out(row: dict) -> UserOut:
         part=row["part"],
         is_active=row["is_active"],
         has_api_key=bool(row.get("encrypted_llm_api_key") or row.get("has_api_key")),
+        has_confluence_pat=bool(row.get("encrypted_confluence_pat") or row.get("has_confluence_pat")),
         created_at=str(row["created_at"]) if row.get("created_at") else "",
     )
 
@@ -105,6 +106,24 @@ async def update_my_api_key(body: ApiKeyUpdateRequest, user: dict = Depends(get_
     if not success:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="API Key 업데이트 실패")
     return {"status": "ok"}
+
+
+@router.put("/me/confluence-pat")
+async def update_my_confluence_pat(body: ConfluencePATRequest, user: dict = Depends(get_current_user)):
+    success = await service.update_confluence_pat(user["id"], body.pat)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Confluence PAT 업데이트 실패")
+    return {"status": "ok"}
+
+
+@router.delete("/me/confluence-pat", status_code=204)
+async def delete_my_confluence_pat(user: dict = Depends(get_current_user)):
+    await service.delete_confluence_pat(user["id"])
+
+
+@router.get("/me/confluence-pat/status")
+async def get_confluence_pat_status(user: dict = Depends(get_current_user)):
+    return {"has_confluence_pat": bool(user.get("encrypted_confluence_pat"))}
 
 
 # ── Admin 전용 ───────────────────────────────────────────────────────────────

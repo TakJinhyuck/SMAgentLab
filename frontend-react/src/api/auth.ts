@@ -45,6 +45,21 @@ export async function updateApiKey(llmApiKey: string): Promise<void> {
   });
 }
 
+export async function updateConfluencePAT(pat: string): Promise<void> {
+  return apiFetch<void>('/auth/me/confluence-pat', {
+    method: 'PUT',
+    body: JSON.stringify({ pat }),
+  });
+}
+
+export async function deleteConfluencePAT(): Promise<void> {
+  return apiFetch<void>('/auth/me/confluence-pat', { method: 'DELETE' });
+}
+
+export async function getConfluencePATStatus(): Promise<{ has_confluence_pat: boolean }> {
+  return apiFetch<{ has_confluence_pat: boolean }>('/auth/me/confluence-pat/status');
+}
+
 export async function getParts(): Promise<Part[]> {
   return apiFetch<Part[]>('/auth/parts');
 }

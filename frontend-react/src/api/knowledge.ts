@@ -259,11 +259,10 @@ export async function importFromUrl(
 export async function previewUrl(
   namespace: string,
   url: string,
-  confluenceToken?: string,
 ): Promise<UrlPreviewResult> {
   return apiFetch('/knowledge/import/url/preview', {
     method: 'POST',
-    body: JSON.stringify({ namespace, url, confluence_token: confluenceToken || null }),
+    body: JSON.stringify({ namespace, url }),
   });
 }
 

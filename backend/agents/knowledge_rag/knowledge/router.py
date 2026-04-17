@@ -531,9 +531,11 @@ async def import_from_url(body: _UrlImportBody, user: dict = Depends(get_current
 
     from agents.knowledge_rag.ingestion.web_crawler import fetch_url
     from agents.knowledge_rag.ingestion.chunker import chunk_document
+    from core.security import get_user_confluence_pat
 
+    confluence_token = body.confluence_token or get_user_confluence_pat(user)
     try:
-        doc = await fetch_url(body.url, confluence_token=body.confluence_token)
+        doc = await fetch_url(body.url, confluence_token=confluence_token)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -621,9 +623,11 @@ async def preview_url(body: _UrlImportBody, user: dict = Depends(get_current_use
     """URL 수집 미리보기 — LLM Analyzer로 전략 자동 결정 후 청킹 결과 반환."""
     from agents.knowledge_rag.ingestion.web_crawler import fetch_url
     from agents.knowledge_rag.ingestion.chunker import chunk_document
+    from core.security import get_user_confluence_pat
 
+    confluence_token = body.confluence_token or get_user_confluence_pat(user)
     try:
-        doc = await fetch_url(body.url, confluence_token=body.confluence_token)
+        doc = await fetch_url(body.url, confluence_token=confluence_token)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

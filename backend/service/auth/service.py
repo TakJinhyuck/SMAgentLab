@@ -80,7 +80,8 @@ async def authenticate_user(username: str, password: str) -> dict:
             """
             SELECT u.id, u.username, u.hashed_password, u.role, u.part_id,
                    p.name AS part,
-                   u.is_active, u.encrypted_llm_api_key, u.created_at::text
+                   u.is_active, u.encrypted_llm_api_key, u.encrypted_confluence_pat,
+                   u.created_at::text
             FROM ops_user u
             LEFT JOIN ops_part p ON u.part_id = p.id
             WHERE u.username = $1
@@ -111,7 +112,8 @@ async def get_user_by_id(user_id: int) -> Optional[dict]:
             """
             SELECT u.id, u.username, u.role, u.part_id,
                    p.name AS part,
-                   u.is_active, u.encrypted_llm_api_key, u.created_at::text
+                   u.is_active, u.encrypted_llm_api_key, u.encrypted_confluence_pat,
+                   u.created_at::text
             FROM ops_user u
             LEFT JOIN ops_part p ON u.part_id = p.id
             WHERE u.id = $1
@@ -129,6 +131,7 @@ async def list_users() -> list[dict]:
                    p.name AS part,
                    u.is_active,
                    (u.encrypted_llm_api_key IS NOT NULL) AS has_api_key,
+                   (u.encrypted_confluence_pat IS NOT NULL) AS has_confluence_pat,
                    u.created_at::text
             FROM ops_user u
             LEFT JOIN ops_part p ON u.part_id = p.id
@@ -206,6 +209,25 @@ async def update_api_key(user_id: int, plain_key: str) -> bool:
         result = await conn.execute(
             "UPDATE ops_user SET encrypted_llm_api_key = $2 WHERE id = $1",
             user_id, encrypted,
+        )
+    return "UPDATE 1" in result
+
+
+async def update_confluence_pat(user_id: int, plain_pat: str) -> bool:
+    encrypted = encrypt_api_key(plain_pat)
+    async with get_conn() as conn:
+        result = await conn.execute(
+            "UPDATE ops_user SET encrypted_confluence_pat = $2 WHERE id = $1",
+            user_id, encrypted,
+        )
+    return "UPDATE 1" in result
+
+
+async def delete_confluence_pat(user_id: int) -> bool:
+    async with get_conn() as conn:
+        result = await conn.execute(
+            "UPDATE ops_user SET encrypted_confluence_pat = NULL WHERE id = $1",
+            user_id,
         )
     return "UPDATE 1" in result
 
