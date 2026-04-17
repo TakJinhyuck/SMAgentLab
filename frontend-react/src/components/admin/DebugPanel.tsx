@@ -66,7 +66,7 @@ const PIPELINE_STEPS: PipelineStep[] = [
   },
   {
     id: 'fewshot',
-    label: 'Few-shot',
+    label: 'Q&A',
     icon: <Zap className="w-7 h-7" />,
     activeIcon: <Zap className="w-7 h-7" />,
     color: 'text-amber-400',
@@ -192,7 +192,7 @@ function ContextPreviewModal({
         <div className="flex flex-col items-center justify-center h-48 gap-3 text-slate-500">
           <p className="text-sm font-medium">컨텍스트 없음</p>
           <p className="text-xs text-center text-slate-600">
-            임계값 기준을 통과한 지식/Few-shot이 없어 LLM에 전달되는 컨텍스트가 비어 있습니다.
+            임계값 기준을 통과한 지식/Q&A가 없어 LLM에 전달되는 컨텍스트가 비어 있습니다.
           </p>
         </div>
       ) : (
@@ -577,12 +577,12 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
               )}
             </div>
 
-            {/* Few-shots */}
+            {/* Q&A */}
             <div className="space-y-3">
               <div>
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-slate-300">
-                    Few-shot 후보 ({result.fewshots.filter(f => f.similarity >= fsMin).length}/{result.fewshots.length}건 통과)
+                    Q&A 후보 ({result.fewshots.filter(f => f.similarity >= fsMin).length}/{result.fewshots.length}건 통과)
                   </h3>
                   <span className="text-xs text-slate-500">
                     유사도 기준 {fsMin.toFixed(2)}+
@@ -594,7 +594,7 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
               </div>
 
               {result.fewshots.length === 0 && (
-                <div className="text-center py-8 text-slate-500 text-sm">등록된 Few-shot이 없습니다.</div>
+                <div className="text-center py-8 text-slate-500 text-sm">등록된 Q&A가 없습니다.</div>
               )}
 
               {result.fewshots.map((fs, i) => {
@@ -620,13 +620,13 @@ export function DebugPanel({ onNavigate }: DebugPanelProps) {
                 );
               })}
 
-              {/* Few-shot 상세 모달 */}
+              {/* Q&A 상세 모달 */}
               {selectedFewshot && (() => {
                 const fs = selectedFewshot;
                 const passed = fs.similarity >= fsMin;
                 const scoreColor = fs.similarity >= fsMin + 0.2 ? 'text-emerald-400' : fs.similarity >= fsMin + 0.1 ? 'text-violet-400' : fs.similarity >= fsMin ? 'text-amber-400' : 'text-rose-400';
                 return (
-                  <Modal isOpen onClose={() => setSelectedFewshot(null)} title="Few-shot 상세" maxWidth="max-w-2xl">
+                  <Modal isOpen onClose={() => setSelectedFewshot(null)} title="Q&A 상세" maxWidth="max-w-2xl">
                     <div className="space-y-5 overflow-y-auto max-h-[70vh]">
                       {/* 점수 헤더 */}
                       <div className="flex items-center justify-between bg-slate-900/60 rounded-lg px-4 py-3">

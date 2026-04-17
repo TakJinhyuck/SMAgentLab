@@ -253,7 +253,7 @@ export interface FeedbackPayload {
   message_id?: number | null;
 }
 
-// Few-shot types
+// Q&A types
 export interface FewshotItem {
   id: number;
   namespace: string;

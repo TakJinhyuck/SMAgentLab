@@ -1858,7 +1858,7 @@ const STAGE_DETAILS: Record<string, { summary: string; detail: string; llmCost: 
   },
   rag: {
     summary: '벡터 검색으로 관련 스키마/용어/예제를 찾습니다.',
-    detail: '질문을 임베딩하여 pgvector에서 유사한 컬럼(스키마), 용어 사전(동의어), SQL 예제(few-shot)를 검색합니다. is_selected=TRUE인 테이블만 대상이며, 검색 결과는 SQL 생성 프롬프트에 컨텍스트로 전달됩니다.',
+    detail: '질문을 임베딩하여 pgvector에서 유사한 컬럼(스키마), 용어 사전(동의어), SQL 예제(Q&A)를 검색합니다. is_selected=TRUE인 테이블만 대상이며, 검색 결과는 SQL 생성 프롬프트에 컨텍스트로 전달됩니다.',
     llmCost: 'LLM 호출 없음 (벡터 검색만)',
     recommendation: '항상 ON 권장. 비용 0이면서 정확도에 핵심적입니다.',
   },

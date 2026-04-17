@@ -132,7 +132,7 @@ export function FewshotTable() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold text-slate-200">
-            Few-shot 베스트케이스
+            Q&A 베스트케이스
             {selectedNs && <span className="text-sm font-normal text-slate-500 ml-2">({selectedNs})</span>}
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -222,7 +222,7 @@ export function FewshotTable() {
           {filteredItems.length === 0 && (
             <div className="text-center py-10 text-slate-500">
               <Zap className="w-8 h-8 mx-auto mb-2 text-slate-500" />
-              <p>Few-shot 항목이 없습니다.</p>
+              <p>Q&A 항목이 없습니다.</p>
               <p className="text-xs mt-1">챗에서 긍정 피드백을 하면 후보로 자동 등록됩니다.</p>
             </div>
           )}
@@ -231,7 +231,7 @@ export function FewshotTable() {
       )}
 
       {/* Create Modal */}
-      <Modal isOpen={showCreate} onClose={() => setShowCreate(false)} title="Few-shot 추가" maxWidth="max-w-xl">
+      <Modal isOpen={showCreate} onClose={() => setShowCreate(false)} title="Q&A 추가" maxWidth="max-w-xl">
         <div className="space-y-3">
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1">
@@ -288,7 +288,7 @@ export function FewshotTable() {
       <Modal
         isOpen={showEdit}
         onClose={() => { setShowEdit(false); setEditingId(null); setEditingItem(null); }}
-        title={canModifyNs ? 'Few-shot 수정' : 'Few-shot 상세'}
+        title={canModifyNs ? 'Q&A 수정' : 'Q&A 상세'}
         maxWidth="max-w-xl"
       >
         <div className="space-y-3">
@@ -377,9 +377,9 @@ export function FewshotTable() {
       </Modal>
 
       {/* Delete Confirmation Modal */}
-      <Modal isOpen={deleteTarget !== null} onClose={() => setDeleteTarget(null)} title="Few-shot 삭제">
+      <Modal isOpen={deleteTarget !== null} onClose={() => setDeleteTarget(null)} title="Q&A 삭제">
         <div className="space-y-4">
-          <p className="text-sm text-slate-300">이 Few-shot 항목을 삭제하시겠습니까? 이후 유사 질문에 더 이상 참조되지 않습니다.</p>
+          <p className="text-sm text-slate-300">이 Q&A 항목을 삭제하시겠습니까? 이후 유사 질문에 더 이상 참조되지 않습니다.</p>
           {deleteMutation.error && (
             <p className="text-xs text-rose-400">{String(deleteMutation.error)}</p>
           )}
