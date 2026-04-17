@@ -1,7 +1,8 @@
 """Analyzer Agent — LLM 기반 문서 분석 + 청킹 전략 자동 결정."""
-import json
 import logging
 from typing import Optional
+
+from agents.knowledge_rag.ingestion.utils import parse_json_object
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +89,7 @@ async def analyze_document(
             max_tokens=1000,
             api_key=api_key,
         )
-        result = _parse_json_object(raw_response)
+        result = parse_json_object(raw_response)
         result = _validate_and_normalize(result)
         logger.info("Analyzer 결과: doc_type=%s, strategy=%s, estimated=%d",
                      result["doc_type"], result["chunk_strategy"], result["estimated_chunks"])
@@ -149,14 +150,4 @@ def _validate_and_normalize(result: dict) -> dict:
     return result
 
 
-def _parse_json_object(text: str) -> dict:
-    """LLM 응답에서 JSON 객체 추출."""
-    text = text.strip()
-    if "```json" in text:
-        text = text.split("```json")[1].split("```")[0].strip()
-    elif "```" in text:
-        text = text.split("```")[1].split("```")[0].strip()
-    result = json.loads(text)
-    if not isinstance(result, dict):
-        raise ValueError("Expected JSON object")
-    return result
+_parse_json_object = parse_json_object  # 테스트 호환성 유지 (공개 import용)

@@ -1,7 +1,8 @@
 """자동 Q&A 생성 — 지식 청크에서 예상 질문-답변 쌍을 LLM으로 생성."""
-import json
 import logging
 from typing import Optional
+
+from agents.knowledge_rag.ingestion.utils import parse_json_array
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ async def generate_qa_pairs(
             max_tokens=1500,
             api_key=api_key,
         )
-        pairs = _parse_json_array(raw)
+        pairs = parse_json_array(raw)
 
         # 유효성 검증 + max_pairs 제한
         valid = []
@@ -102,13 +103,3 @@ async def bulk_generate_qa(
     return all_pairs
 
 
-def _parse_json_array(text: str) -> list:
-    text = text.strip()
-    if "```json" in text:
-        text = text.split("```json")[1].split("```")[0].strip()
-    elif "```" in text:
-        text = text.split("```")[1].split("```")[0].strip()
-    result = json.loads(text)
-    if not isinstance(result, list):
-        raise ValueError("Expected JSON array")
-    return result

@@ -1,7 +1,10 @@
 """LLM 기반 자동 메타데이터 태깅 + 용어 추출."""
-import json
 import logging
 from typing import Optional
+
+from agents.knowledge_rag.ingestion.utils import parse_json_array
+
+_parse_json_array = parse_json_array  # 테스트 호환성 유지
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +79,7 @@ async def auto_tag_chunks(
             max_tokens=2000,
             api_key=api_key,
         )
-        result = _parse_json_array(raw)
+        result = parse_json_array(raw)
         logger.info("자동 태깅 완료: %d개 청크", len(result))
         return result
     except Exception as e:
@@ -112,7 +115,7 @@ async def extract_glossary_terms(
             max_tokens=1000,
             api_key=api_key,
         )
-        terms = _parse_json_array(raw)
+        terms = parse_json_array(raw)
         # 기존 용어와 중복 제거
         existing_lower = {t.lower() for t in existing_terms}
         filtered = [t for t in terms if t.get("term", "").lower() not in existing_lower]
@@ -123,14 +126,3 @@ async def extract_glossary_terms(
         return []
 
 
-def _parse_json_array(text: str) -> list:
-    """LLM 응답에서 JSON 배열 추출."""
-    text = text.strip()
-    if "```json" in text:
-        text = text.split("```json")[1].split("```")[0].strip()
-    elif "```" in text:
-        text = text.split("```")[1].split("```")[0].strip()
-    result = json.loads(text)
-    if not isinstance(result, list):
-        raise ValueError("Expected JSON array")
-    return result
