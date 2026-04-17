@@ -62,7 +62,7 @@ export function FeedbackSection({
     try {
       await postFeedback({ namespace, question, answer, knowledge_id: knowledgeId ?? null, is_positive: true, message_id: messageId ?? null });
       if (agentType === 'text2sql' && sqlResult?.sql) {
-        // text2sql 긍정 피드백 → SQL few-shot 후보 등록
+        // text2sql 긍정 피드백 → SQL Q&A 후보 등록
         await createSqlFewshotFromFeedback(namespace, question, sqlResult.sql).catch(() => {});
         qc.invalidateQueries({ queryKey: ['sql_fewshots', namespace] });
       } else {
