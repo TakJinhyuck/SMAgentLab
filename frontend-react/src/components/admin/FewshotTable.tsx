@@ -52,10 +52,15 @@ export function FewshotTable() {
     refetchOnMount: 'always',
   });
 
-  // Client-side status filter
-  const filteredItems = statusFilter === 'all'
-    ? items
-    : items.filter((item) => item.status === statusFilter);
+  // Client-side status filter + sort: 활성 우선 → 최신순
+  const STATUS_ORDER: Record<string, number> = { active: 0, candidate: 1 };
+  const filteredItems = (statusFilter === 'all' ? items : items.filter((i) => i.status === statusFilter))
+    .slice()
+    .sort((a, b) => {
+      const so = (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9);
+      if (so !== 0) return so;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
 
   const { totalPages, totalItems, slice } = useClientPaging(filteredItems, pageSize);
   const pagedItems = slice(page);
