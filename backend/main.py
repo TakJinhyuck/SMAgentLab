@@ -20,12 +20,14 @@ from service.admin.router import router as admin_router
 from service.mcp_tool.router import router as mcp_tool_router
 from service.prompt.router import router as prompt_router
 from agents.text2sql.admin.router import router as text2sql_router
+from agents.voc_agent.router import router as voc_router
 
 from shared import cache as sem_cache
 from agents.base import AgentRegistry
 from agents.knowledge_rag.agent import KnowledgeRagAgent
 from agents.mcp_tool.agent import McpToolAgent
 from agents.text2sql.agent import Text2SqlAgent
+from agents.voc_agent.agent import VocAgent
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,7 @@ _ROUTERS = [
     mcp_tool_router,
     prompt_router,
     text2sql_router,
+    voc_router,
 ]
 
 
@@ -942,6 +945,58 @@ async def _migrate_knowledge_ingestion(conn) -> None:
     """)
 
 
+async def _migrate_voc_tables(conn) -> None:
+    """voc_case, voc_manual 테이블 및 FTS 인덱스 생성 (멱등)."""
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS voc_case (
+            id              SERIAL PRIMARY KEY,
+            namespace_id    INT          NOT NULL REFERENCES ops_namespace(id) ON DELETE CASCADE,
+            title           VARCHAR(500) NOT NULL,
+            content         TEXT         NOT NULL,
+            category        VARCHAR(100),
+            severity        VARCHAR(20)  DEFAULT 'medium',
+            status          VARCHAR(50)  DEFAULT 'resolved',
+            resolution      TEXT,
+            root_cause      TEXT,
+            affected_system VARCHAR(200),
+            tags            TEXT[],
+            base_weight     FLOAT        NOT NULL DEFAULT 0.0,
+            embedding       VECTOR(768),
+            created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+            resolved_at     TIMESTAMPTZ
+        )
+    """)
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS voc_manual (
+            id           SERIAL PRIMARY KEY,
+            namespace_id INT          NOT NULL REFERENCES ops_namespace(id) ON DELETE CASCADE,
+            title        VARCHAR(500) NOT NULL,
+            content      TEXT         NOT NULL,
+            category     VARCHAR(100),
+            step_order   INT          DEFAULT 0,
+            base_weight  FLOAT        NOT NULL DEFAULT 0.0,
+            embedding    VECTOR(768),
+            created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+        )
+    """)
+    await conn.execute("CREATE INDEX IF NOT EXISTS idx_voc_case_namespace  ON voc_case (namespace_id)")
+    await conn.execute("CREATE INDEX IF NOT EXISTS idx_voc_case_category   ON voc_case (category)")
+    await conn.execute("CREATE INDEX IF NOT EXISTS idx_voc_case_severity   ON voc_case (severity)")
+    await conn.execute("CREATE INDEX IF NOT EXISTS idx_voc_case_embedding  ON voc_case USING hnsw (embedding vector_cosine_ops)")
+    await conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_voc_case_fts ON voc_case
+        USING GIN (to_tsvector('simple',
+            title || ' ' || content || ' ' ||
+            COALESCE(resolution,'') || ' ' || COALESCE(root_cause,'')))
+    """)
+    await conn.execute("CREATE INDEX IF NOT EXISTS idx_voc_manual_namespace ON voc_manual (namespace_id)")
+    await conn.execute("CREATE INDEX IF NOT EXISTS idx_voc_manual_embedding ON voc_manual USING hnsw (embedding vector_cosine_ops)")
+    await conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_voc_manual_fts ON voc_manual
+        USING GIN (to_tsvector('simple', title || ' ' || content))
+    """)
+
+
 async def _run_migrations() -> None:
     """기존 DB 호환용 스키마 마이그레이션 (멱등)."""
     async with get_conn() as conn:
@@ -951,6 +1006,7 @@ async def _run_migrations() -> None:
         await _migrate_text2sql_tables(conn)
         await _migrate_system_tables(conn)
         await _migrate_knowledge_ingestion(conn)
+        await _migrate_voc_tables(conn)
 
 
 @asynccontextmanager
@@ -965,6 +1021,7 @@ async def lifespan(_app: FastAPI):
     AgentRegistry.register(KnowledgeRagAgent())
     AgentRegistry.register(McpToolAgent())
     AgentRegistry.register(Text2SqlAgent())
+    AgentRegistry.register(VocAgent())
 
     llm_ok = await get_llm_provider().health_check()
     level, msg = ("INFO", "연결 확인됨") if llm_ok else ("WARNING", "연결 불가 — LLM 기능 제한")

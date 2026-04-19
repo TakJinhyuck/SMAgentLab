@@ -1,0 +1,83 @@
+결제 서비스 장애 대응 런북 (Payment Service Incident Runbook)
+
+## 1. 즉각 조치 (0~5분)
+
+1.1 상황 파악
+- Grafana 대시보드에서 결제 API 응답 시간 및 에러율 확인
+- PG사(이니시스/KG모빌리언스) 공지 페이지 확인 (외부 장애 여부)
+- 운영팀 Slack #incident 채널에 초기 상황 공유
+
+1.2 즉각 롤백 판단 기준
+- 에러율 5% 초과 → 즉시 이전 버전 롤백 검토
+- 응답 시간 10초 초과 → 결제 API 서킷브레이커 오픈
+
+1.3 고객 피해 최소화
+- 결제 실패 고객에게 자동 재시도 안내 문자 발송
+- 고객센터에 장애 현황 공유 (예상 복구 시간 포함)
+
+
+## 2. 원인 분석 (5~20분)
+
+2.1 DB 연결 상태 확인
+```bash
+# PostgreSQL 연결 수 확인
+SELECT count(*), state FROM pg_stat_activity GROUP BY state;
+
+# 슬로우 쿼리 확인 (5초 이상)
+SELECT pid, query, query_start, state
+FROM pg_stat_activity
+WHERE state = 'active'
+  AND now() - query_start > interval '5 seconds';
+```
+
+2.2 애플리케이션 로그 분석
+```bash
+# 에러 로그 확인
+kubectl logs -n payment deployment/payment-api --since=30m | grep ERROR
+
+# 타임아웃 패턴 확인
+kubectl logs -n payment deployment/payment-api --since=30m | grep -i timeout
+```
+
+2.3 외부 의존성 점검
+- Redis 캐시 서버 응답 확인: redis-cli ping
+- PG사 API 헬스체크 엔드포인트 직접 호출
+- 메시지 큐 (Kafka) 컨슈머 지연 확인
+
+
+## 3. 복구 절차 (원인별)
+
+3.1 DB 커넥션 풀 소진
+1. 즉각: 불필요한 쿼리 강제 종료 (pg_terminate_backend)
+2. 단기: 커넥션 풀 크기 확장 (max_connections 증가, 앱 재배포)
+3. 장기: PgBouncer 도입 검토
+
+3.2 외부 PG사 장애
+1. 장애 PG사 → 예비 PG사로 트래픽 전환 (설정 파일 변경 후 재배포)
+2. PG사 장애 지속 시 결제 수단 임시 비활성화
+
+3.3 애플리케이션 버그
+1. 원인 커밋 식별 (git bisect 또는 배포 이력 확인)
+2. 핫픽스 브랜치 생성 → 수정 → 즉시 배포
+3. 배포 전 스테이징 환경 검증 필수
+
+
+## 4. 에스컬레이션 경로
+
+- 1차: 담당 백엔드 개발팀 (Slack @payment-team)
+- 2차: 인프라팀 (DB/네트워크 이슈 시)
+- 3차: CTO 보고 (서비스 전면 중단 30분 초과 시)
+- PG사 긴급 연락처: 이니시스 1588-4433, KG 1544-8282
+
+
+## 5. 복구 후 처리
+
+5.1 영향받은 거래 정리
+- 결제 실패 건 재시도 가능 여부 확인
+- 중복 결제 발생 시 즉시 자동 환불 처리
+- 미정산 거래 수동 정산 처리
+
+5.2 재발 방지
+- 포스트모텀 작성 (72시간 이내)
+- 모니터링 알람 임계값 조정
+- 부하 테스트 실시 (복구 후 1주일 이내)
